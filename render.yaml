@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: chit-api-test
+    runtime: node
+    plan: free
+    rootDir: chit_v5
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: test
+      - key: PORT
+        value: "10000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: chit-test-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: chit-test-redis
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+
+  - type: keyvalue
+    name: chit-test-redis
+    plan: free
+    region: singapore
+
+databases:
+  - name: chit-test-db
+    plan: free
+    region: singapore

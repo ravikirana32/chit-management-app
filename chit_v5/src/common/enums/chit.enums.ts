@@ -1,0 +1,34 @@
+export enum ChitType {
+  FIXED_DRAW = 'FIXED_DRAW',
+  AUCTION = 'AUCTION',
+}
+
+export enum ChitStatus {
+  DRAFT = 'DRAFT',
+  INVITING = 'INVITING',
+  MEMBERS_CONFIRMED = 'MEMBERS_CONFIRMED',
+  READY_TO_START = 'READY_TO_START',
+  ACTIVE = 'ACTIVE',
+  COMPLETED = 'COMPLETED',
+  ARCHIVED = 'ARCHIVED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum ChitMonthType {
+  ACTION = 'ACTION',
+  AGENT_CHIT = 'AGENT_CHIT',
+}
+
+export enum ParticipationRole {
+  PARTICIPANT = 'PARTICIPANT',
+  CO_ORGANIZER = 'CO_ORGANIZER',
+}
+
+export enum ParticipantStatus {
+  INVITED = 'INVITED',
+  ACTIVE = 'ACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  EXIT_REQUESTED = 'EXIT_REQUESTED',
+  EXITED = 'EXITED',
+  REMOVED = 'REMOVED',
+}

@@ -1,0 +1,16 @@
+ALTER TABLE chits ADD COLUMN IF NOT EXISTS collection_grace_days INTEGER NOT NULL DEFAULT 7;
+ALTER TABLE chits ADD COLUMN IF NOT EXISTS agent_commission_mode VARCHAR(30) NOT NULL DEFAULT 'PER_AGENT_MONTH';
+ALTER TABLE chits ADD COLUMN IF NOT EXISTS auction_discount_distribution VARCHAR(40) NOT NULL DEFAULT 'EQUAL_MEMBER_BENEFIT';
+
+CREATE TABLE IF NOT EXISTS recovery_installments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id UUID NOT NULL,
+  installment_number INTEGER NOT NULL,
+  due_date DATE NOT NULL,
+  amount NUMERIC(14,2) NOT NULL,
+  paid_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+  status VARCHAR(30) NOT NULL DEFAULT 'DUE',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(plan_id,installment_number)
+);

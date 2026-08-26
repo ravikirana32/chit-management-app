@@ -1,0 +1,17 @@
+{
+  "environment":"test",
+  "resetBeforeSuite":true,
+  "entities":{
+    "creator":"test-creator-001",
+    "members":["test-member-001","test-member-002","test-member-003","test-member-004"],
+    "fixedChit":"test-fixed-001",
+    "auctionChit":"test-auction-001",
+    "agent":"test-agent-001"
+  },
+  "financialRules":{
+    "monthlyAmount":200000,
+    "memberCount":4,
+    "auctionWindowMinutes":60,
+    "graceDays":7
+  }
+}

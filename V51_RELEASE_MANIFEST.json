@@ -1,0 +1,25 @@
+{
+  "release": "v51-final-production",
+  "cumulative_versions": "v1-v51",
+  "payment_model": "direct-upi-or-cash-manual-verification",
+  "payment_gateway": false,
+  "features": [
+    "fixed-draw",
+    "auction",
+    "agent-month",
+    "upi-and-cash",
+    "cash-by-creator-agent",
+    "winner-upi",
+    "payment-proof",
+    "payment-disputes",
+    "existing-chit-migration",
+    "historical-reconciliation",
+    "chit-chat",
+    "chat-moderation",
+    "notifications",
+    "mobile-app",
+    "docker-deployment",
+    "backup-restore-runbook"
+  ],
+  "production_certification": "requires_external_environment_validation"
+}

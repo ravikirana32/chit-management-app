@@ -1,0 +1,436 @@
+# Render Free Testing Deployment — Beginner Guide
+
+This guide deploys the Chit API for TESTING. It is not a production deployment.
+
+## 0. What we will create
+
+```text
+GitHub
+  |
+  +--> Render Web Service (Node/NestJS API)
+  |
+  +--> Render Postgres (test database)
+  |
+  +--> Render Key Value (Redis-compatible test cache)
+```
+
+Render provides free Web Services, Postgres and Key Value for testing/hobby use, but free resources have important limitations. In particular, free Web Services spin down after 15 minutes of inactivity; free Postgres is 1 GB and expires after 30 days; free Key Value is in-memory and can lose data after restart. Do not use these free resources for production or important data.
+
+Official references:
+- Render free resources: https://render.com/docs/free
+- First deploy: https://render.com/docs/your-first-deploy
+- Web services: https://render.com/docs/web-services
+- GitHub integration: https://render.com/docs/github
+- Key Value: https://render.com/docs/key-value
+
+## 1. Create a GitHub account
+
+If you already have GitHub, skip this step.
+
+1. Go to https://github.com/
+2. Create an account.
+3. Verify your email.
+4. Create a new repository, for example:
+
+`chit-app`
+
+Keep the repository private if the source code should not be public.
+
+## 2. Upload the v53 source
+
+Extract the cumulative ZIP.
+
+Recommended repository layout:
+
+```text
+chit-app/
+  chit_v5/
+  mobile-app/
+  *.md
+```
+
+The backend is under `chit_v5`.
+
+Open a terminal in the project root:
+
+```bash
+git init
+git add .
+git commit -m "Initial Chit app v53"
+git branch -M main
+git remote add origin <YOUR_GITHUB_REPOSITORY>
+git push -u origin main
+```
+
+Do NOT commit `.env` files containing secrets.
+
+## 3. Create Render account
+
+1. Open https://render.com/
+2. Choose Sign Up.
+3. You can sign up using GitHub.
+4. Authorize Render to access the repository.
+5. Open the Render Dashboard.
+
+Render officially supports GitHub/GitLab/Bitbucket deployments.
+
+## 4. Create PostgreSQL
+
+In Render:
+
+1. Click `New`.
+2. Select `Postgres`.
+3. Name it:
+
+`chit-test-db`
+
+4. Choose the same region you will use for the API.
+5. Select the Free instance type for testing.
+6. Create the database.
+
+IMPORTANT:
+Free Postgres is temporary. Render documents a 30-day expiration and no backups on the free instance.
+
+After creation, open the database and copy the internal connection information as environment variables if Render exposes the individual values.
+
+Prefer the internal/private connection string for a Render-hosted API in the same region.
+
+## 5. Create Redis-compatible Key Value
+
+In Render:
+
+1. Click `New`.
+2. Select `Key Value`.
+3. Name:
+
+`chit-test-redis`
+
+4. Select the same region.
+5. Select Free.
+6. Create it.
+
+Render Key Value is Redis-compatible. Free Key Value is in-memory and can lose data on restart. Therefore use it for cache/session/temporary test behavior only.
+
+## 6. Create API Web Service
+
+In Render:
+
+1. Click `New`.
+2. Select `Web Service`.
+3. Connect GitHub.
+4. Select the Chit repository.
+5. Choose the `main` branch.
+
+Set:
+
+### Root Directory
+
+```text
+chit_v5
+```
+
+### Runtime
+
+```text
+Node
+```
+
+### Build Command
+
+Use the package scripts in the repository. Typical command:
+
+```bash
+npm ci && npm run build
+```
+
+### Start Command
+
+Use the project's production start script. Typical NestJS command:
+
+```bash
+npm run start:prod
+```
+
+If your package.json uses a different script, use that exact script.
+
+### Instance
+
+For initial testing:
+
+```text
+Free
+```
+
+## 7. Set environment variables
+
+Open:
+
+`Web Service → Environment`
+
+Add the variables expected by the existing `.env.example`.
+
+Typical categories include:
+
+```text
+NODE_ENV=test
+PORT=10000
+
+DATABASE_URL=<Render internal Postgres connection>
+REDIS_URL=<Render Key Value connection>
+
+JWT_SECRET=<long-random-test-secret>
+JWT_REFRESH_SECRET=<long-random-test-refresh-secret>
+
+CORS_ORIGINS=<temporary mobile/web test origins>
+```
+
+Do not copy production secrets into the test environment.
+
+If the project uses separate DB variables instead of DATABASE_URL, configure those exact variables from `.env.example`.
+
+## 8. Important Render port requirement
+
+Render requires the web service to listen on the expected public port and bind to `0.0.0.0`.
+
+The application should effectively listen like:
+
+```text
+0.0.0.0:PORT
+```
+
+Do not bind only to:
+
+```text
+localhost
+127.0.0.1
+```
+
+## 9. Configure health check
+
+If the API has a health endpoint, configure it in Render.
+
+Example:
+
+```text
+/health
+```
+
+or use the actual health endpoint already present in the project.
+
+Do not invent a route that the application does not expose.
+
+## 10. Deploy
+
+Click:
+
+`Create Web Service`
+
+Render will:
+
+```text
+Clone GitHub
+   ↓
+Install dependencies
+   ↓
+Build
+   ↓
+Start API
+   ↓
+Assign HTTPS URL
+```
+
+The service will receive an address similar to:
+
+```text
+https://chit-api-xxxx.onrender.com
+```
+
+The exact URL is generated by Render.
+
+## 11. Check logs
+
+Open:
+
+`Web Service → Logs`
+
+Look for:
+
+```text
+Build successful
+Application started
+Listening on 0.0.0.0
+```
+
+If it crashes, inspect the first application error rather than repeatedly redeploying.
+
+## 12. Run database migrations
+
+The exact migration command must match the project's package.json.
+
+Typical examples are:
+
+```bash
+npm run db:migrate
+```
+
+or:
+
+```bash
+npx sequelize-cli db:migrate
+```
+
+Do not run a guessed command. Open `chit_v5/package.json` and use the repository's migration script.
+
+For a Free Render test service, migrations can be run from an approved deployment workflow or from a local machine using the Render database connection if the database permits it. Do not expose the database publicly just to make migrations easier.
+
+## 13. Seed test data
+
+Use only the project's test/seed command.
+
+Example:
+
+```bash
+npm run seed
+```
+
+Only if that script exists.
+
+Recommended test data:
+
+```text
+Creator
+  |
+  +-- Agent A
+  +-- Agent B
+  |
+  +-- Chit A
+  |     +-- 20 test members
+  |
+  +-- Chit B
+        +-- 10 test members
+```
+
+Use fake/test UPI IDs and test screenshots.
+
+## 14. Swagger
+
+If Swagger is enabled, open:
+
+```text
+https://YOUR-RENDER-URL/<swagger-path>
+```
+
+Use the exact Swagger path from the application configuration.
+
+Test:
+
+- authentication
+- creator APIs
+- agent dashboard
+- chit APIs
+- payment APIs
+- payment proof
+- disputes
+- chat
+- notifications
+
+## 15. Configure mobile app
+
+Find the existing mobile API configuration.
+
+Set the staging/test API base URL to:
+
+```text
+https://YOUR-RENDER-URL
+```
+
+Do not put the Render database URL into the mobile app.
+
+Only the HTTPS API URL belongs in the mobile application.
+
+## 16. Test from phone
+
+Use:
+
+```text
+Android phone
+     ↓
+Internet
+     ↓
+Render HTTPS API
+```
+
+You no longer need your PC's LAN IP for API access.
+
+Test:
+
+1. Login
+2. Create/open chit
+3. Add member
+4. Agent dashboard
+5. UPI payment instruction
+6. Cash payment
+7. Screenshot upload flow
+8. Payment verification
+9. Dispute
+10. Chat
+11. Notifications
+
+## 17. Important free-tier behavior
+
+Free API service can sleep after inactivity and take about a minute to wake up.
+
+Therefore the first request after inactivity may be slow.
+
+Do not interpret that as an application performance bug.
+
+Free Postgres expires after 30 days.
+
+Free Key Value is in-memory and can lose data after restart.
+
+Never store uploaded screenshots on the API's local filesystem because Render service filesystems are ephemeral.
+
+Payment proof and chat attachments must use private object storage in the architecture.
+
+## 18. First testing milestone
+
+The goal is not "production".
+
+The goal is:
+
+```text
+Render API
+   ↓
+Real Android phone
+   ↓
+20 fake/test members
+   ↓
+2 test agents
+   ↓
+2 test chits
+   ↓
+UPI/Cash workflows
+   ↓
+Chat
+   ↓
+Migration
+   ↓
+Reconciliation
+```
+
+Once this passes, move to a paid/stable production architecture.
+
+## 19. Production warning
+
+Do NOT use the free Render database for real member money records or real chit records.
+
+Before production:
+- upgrade database
+- configure backups
+- use durable object storage
+- use production secrets
+- configure monitoring
+- configure alerts
+- test restore
+- use a production-grade Redis/Key Value plan
+- complete security review
