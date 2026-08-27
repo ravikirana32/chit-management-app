@@ -13,5 +13,6 @@ RUN npm install --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/migrations ./migrations
 COPY --from=build /app/sequelize.config.js ./sequelize.config.js
+COPY --from=build /app/.sequelizerc ./.sequelizerc
 EXPOSE 3000
-CMD ["sh","-c","npm run db:migrate && node dist/main.js"]
+CMD ["sh","-c","npx sequelize-cli db:migrate --config ./sequelize.config.js --migrations-path ./migrations && node dist/main.js"]
