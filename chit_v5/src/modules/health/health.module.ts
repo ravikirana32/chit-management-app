@@ -1,19 +1,26 @@
 import { Controller, Get, Module } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { Sequelize } from 'sequelize-typescript';
 
-@ApiTags('Health')
-@Controller({ path: 'health', version: 'v1' })
+@Controller('health')
 class HealthController {
+  constructor(private readonly sequelize: Sequelize) {}
+
   @Get()
-  getHealth() {
-    return {
-      success: true,
-      data: {
+  async check() {
+    try {
+      await this.sequelize.authenticate();
+      return {
         status: 'ok',
-        service: 'chit-app-api',
+        database: 'ok',
         timestamp: new Date().toISOString(),
-      },
-    };
+      };
+    } catch {
+      return {
+        status: 'error',
+        database: 'error',
+        timestamp: new Date().toISOString(),
+      };
+    }
   }
 }
 
