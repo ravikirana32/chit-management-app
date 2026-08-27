@@ -26,41 +26,77 @@ const sequelizeModels = [
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const databaseUrl = config.get<string>('DATABASE_URL');
+        const databaseUrl = config.get<string>('DATABASE_URL')?.trim();
 
-        // Sequelize reliably accepts the connection URI as its first
-        // constructor argument. Nest's Sequelize integration supports
-        // `url`, but we keep the URI parsing explicit here so Render's
-        // PostgreSQL URL is unambiguous.
         const common = {
           dialect: 'postgres' as const,
           models: sequelizeModels,
           autoLoadModels: false,
           synchronize: false,
           logging: false,
+          dialectOptions: { connectTimeout: 10000 },
         };
 
-        //if (databaseUrl) {
-        //  return {
-        //    ...common,
-         //   url: databaseUrl,
-         //   dialectOptions: {
-         //     connectTimeout: 10000,
-         //   },
-        //  };
-        //}
+        if (databaseUrl) {
+          let parsed: URL;
+          try {
+            parsed = new URL(databaseUrl);
+          } catch {
+            throw new Error('DATABASE_URL is present but is not a valid PostgreSQL URL');
+          }
 
-        return {
-          ...common,
-          host: config.get<string>('DATABASE_HOST', 'localhost'),
-          port: Number(config.get<string>('DATABASE_PORT', '5432')),
-          database: config.get<string>('DATABASE_NAME', 'chit_app'),
-          username: config.get<string>('DATABASE_USER', 'postgres'),
-          password: config.get<string>('DATABASE_PASSWORD', 'postgres'),
-          dialectOptions: {
-            connectTimeout: 10000,
-          },
-        };
+          const host = parsed.hostname;
+          const port = Number(parsed.port || '5432');
+          const database = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+          const username = decodeURIComponent(parsed.username);
+          const password = decodeURIComponent(parsed.password);
+
+          if (!host || !database || !username) {
+            throw new Error('DATABASE_URL is missing required PostgreSQL connection fields');
+          }
+
+          const isRenderInternalHost =
+            host.startsWith('dpg-') && !host.includes('.');
+
+          console.log('[DATABASE] PostgreSQL configuration loaded', {
+            source: 'DATABASE_URL',
+            host,
+            port,
+            database,
+            ssl: !isRenderInternalHost,
+          });
+
+          return {
+            ...common,
+            host,
+            port,
+            database,
+            username,
+            password,
+            dialectOptions: {
+              connectTimeout: 10000,
+              ...(isRenderInternalHost
+                ? {}
+                : { ssl: { require: true, rejectUnauthorized: false } }),
+            },
+          };
+        }
+
+        const host = config.get<string>('DATABASE_HOST', 'localhost');
+        const port = Number(config.get<string>('DATABASE_PORT', '5432'));
+        const database = config.get<string>('DATABASE_NAME', 'chit_app');
+        const username = config.get<string>('DATABASE_USER', 'postgres');
+        const password = config.get<string>('DATABASE_PASSWORD', 'postgres');
+
+        console.log('[DATABASE] PostgreSQL configuration loaded', {
+          source: 'individual variables',
+          host,
+          port,
+          database,
+          ssl: false,
+        });
+
+        return { ...common, host, port, database, username, password };
       },
     }),
   ],
