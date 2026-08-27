@@ -1,13 +1,24 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import * as models from './models';
-import { Model, ModelCtor } from 'sequelize-typescript';
 
-const sequelizeModels = Object.values(models).filter(
-  (model): model is ModelCtor<Model> =>
-    typeof model === 'function' && model.prototype instanceof Model,
-);
+import { User } from './models/User';
+import { Chit } from './models/Chit';
+import { ChitParticipant } from './models/ChitParticipant';
+import { Agent } from './models/Agent';
+import { ChitMonth } from './models/ChitMonth';
+import { ContributionObligation } from './models/ContributionObligation';
+import { Payment } from './models/Payment';
+
+const sequelizeModels = [
+  User,
+  Chit,
+  ChitParticipant,
+  Agent,
+  ChitMonth,
+  ContributionObligation,
+  Payment,
+];
 
 @Module({
   imports: [
@@ -21,7 +32,9 @@ const sequelizeModels = Object.values(models).filter(
         database: config.get<string>('DATABASE_NAME', 'chit_app'),
         username: config.get<string>('DATABASE_USER', 'postgres'),
         password: config.get<string>('DATABASE_PASSWORD', 'postgres'),
+
         models: sequelizeModels,
+
         autoLoadModels: false,
         synchronize: false,
         logging: false,
