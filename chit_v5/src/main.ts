@@ -16,6 +16,97 @@ async function bootstrap() {
   });
 });
 
+  app.getHttpAdapter().get('/api/v1/db-diagnostic', async (_req, res) => {
+    const rawUrl = process.env.DATABASE_URL?.trim();
+  
+    if (!rawUrl) {
+      return res.json({
+        status: 'error',
+        stage: 'configuration',
+        databaseUrl: 'missing',
+      });
+    }
+  
+    let parsed: URL;
+  
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      return res.json({
+        status: 'error',
+        stage: 'configuration',
+        databaseUrl: 'invalid',
+      });
+    }
+  
+    const host = parsed.hostname;
+    const port = Number(parsed.port || 5432);
+  
+    const dns = await import('node:dns/promises');
+    const net = await import('node:net');
+  
+    let dnsResult;
+  
+    try {
+      dnsResult = await dns.lookup(host);
+    } catch (error: any) {
+      return res.json({
+        status: 'error',
+        stage: 'dns',
+        host,
+        port,
+        code: error?.code ?? null,
+        message: error?.message ?? null,
+      });
+    }
+  
+    const tcp = await new Promise<any>((resolve) => {
+      const socket = net.createConnection({ host, port });
+  
+      socket.setTimeout(10000);
+  
+      socket.once('connect', () => {
+        socket.destroy();
+        resolve({
+          status: 'ok',
+        });
+      });
+  
+      socket.once('timeout', () => {
+        socket.destroy();
+        resolve({
+          status: 'failed',
+          code: 'ETIMEDOUT',
+        });
+      });
+  
+      socket.once('error', (error: any) => {
+        socket.destroy();
+        resolve({
+          status: 'failed',
+          code: error?.code ?? null,
+          message: error?.message ?? null,
+        });
+      });
+    });
+  
+    return res.json({
+      status: tcp.status === 'ok' ? 'ok' : 'error',
+      stage: tcp.status === 'ok' ? 'tcp' : 'tcp',
+      target: {
+        host,
+        port,
+        database: parsed.pathname.replace(/^\//, ''),
+      },
+      dns: {
+        status: 'ok',
+        address: dnsResult.address,
+      },
+      tcp,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   app.setGlobalPrefix(process.env.API_PREFIX ?? 'api');
 
   app.enableVersioning({
