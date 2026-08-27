@@ -18,7 +18,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 class AuctionsController {
   constructor(
     private readonly service: AuctionService,
-    private readonly state: AuctionStateService,
+    private readonly auctionState: AuctionStateService,
   ) {}
 
   @Post('chits/:chitId/open')
@@ -54,7 +54,7 @@ class AuctionsController {
   @Get(':auctionId/state')
   @ApiOperation({ summary: 'Get current auction state and recent bids' })
   state(@Param('auctionId') auctionId: string) {
-    return this.state.getState(auctionId);
+    return this.auctionState.getState(auctionId);
   }
 }
 
