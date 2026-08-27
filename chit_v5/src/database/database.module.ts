@@ -25,20 +25,33 @@ const sequelizeModels = [
     SequelizeModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        dialect: 'postgres',
-        host: config.get<string>('DATABASE_HOST', 'localhost'),
-        port: Number(config.get<string>('DATABASE_PORT', '5432')),
-        database: config.get<string>('DATABASE_NAME', 'chit_app'),
-        username: config.get<string>('DATABASE_USER', 'postgres'),
-        password: config.get<string>('DATABASE_PASSWORD', 'postgres'),
+      useFactory: (config: ConfigService) => {
+        const databaseUrl = config.get<string>('DATABASE_URL');
 
-        models: sequelizeModels,
+        return {
+          dialect: 'postgres',
 
-        autoLoadModels: false,
-        synchronize: false,
-        logging: false,
-      }),
+          // Prefer Render's DATABASE_URL when available.
+          // Keep the individual variables as a local/development fallback.
+          ...(databaseUrl
+            ? { url: databaseUrl }
+            : {
+                host: config.get<string>('DATABASE_HOST', 'localhost'),
+                port: Number(config.get<string>('DATABASE_PORT', '5432')),
+                database: config.get<string>('DATABASE_NAME', 'chit_app'),
+                username: config.get<string>('DATABASE_USER', 'postgres'),
+                password: config.get<string>(
+                  'DATABASE_PASSWORD',
+                  'postgres',
+                ),
+              }),
+
+          models: sequelizeModels,
+          autoLoadModels: false,
+          synchronize: false,
+          logging: false,
+        };
+      },
     }),
   ],
   exports: [SequelizeModule],
