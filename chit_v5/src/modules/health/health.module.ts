@@ -14,7 +14,22 @@ class HealthController {
         database: 'ok',
         timestamp: new Date().toISOString(),
       };
-    } catch {
+    } catch (error: any) {
+      // Log the real database error in Render logs, but never return
+      // credentials or the full connection string to the client.
+      console.error('[HEALTH][DATABASE] connection failed', {
+        name: error?.name ?? 'UnknownError',
+        code: error?.parent?.code ?? error?.original?.code ?? error?.code ?? null,
+        message: String(
+          error?.parent?.message ??
+            error?.original?.message ??
+            error?.message ??
+            'Unknown database error',
+        )
+          .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, '[REDACTED_DATABASE_URL]')
+          .replace(/password=[^\s&]+/gi, 'password=[REDACTED]'),
+      });
+
       return {
         status: 'error',
         database: 'error',
