@@ -2,8 +2,10 @@ import {Body,Controller,Get,Module,Put,UseGuards} from '@nestjs/common';
 import {ApiBearerAuth,ApiOperation,ApiProperty,ApiTags} from '@nestjs/swagger';
 import {IsBoolean,IsOptional,IsString,MaxLength} from 'class-validator';
 import {JwtAuthGuard} from '../auth/jwt-auth.guard';
+import { AuthModule } from '../auth/auth.module';
 import {CurrentUser} from '../auth/current-user.decorator';
 import {Sequelize} from 'sequelize-typescript';
+
 class PaymentProfileDto{
  @ApiProperty({required:false}) @IsOptional() @IsString() @MaxLength(255) upiId?:string;
  @ApiProperty({required:false}) @IsOptional() @IsString() @MaxLength(150) bankName?:string;
@@ -37,4 +39,8 @@ class UsersController{
   return {success:true,data:rows[0]};
  }
 }
-@Module({controllers:[UsersController]}) export class UsersModule{}
+@Module({
+  imports: [AuthModule],
+  controllers: [UsersController],
+})
+export class UsersModule {}
