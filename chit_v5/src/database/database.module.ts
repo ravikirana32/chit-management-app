@@ -40,15 +40,15 @@ const sequelizeModels = [
           logging: false,
         };
 
-        if (databaseUrl) {
-          return {
-            ...common,
-            url: databaseUrl,
-            dialectOptions: {
-              connectTimeout: 10000,
-            },
-          };
-        }
+        //if (databaseUrl) {
+        //  return {
+        //    ...common,
+         //   url: databaseUrl,
+         //   dialectOptions: {
+         //     connectTimeout: 10000,
+         //   },
+        //  };
+        //}
 
         return {
           ...common,
