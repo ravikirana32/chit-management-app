@@ -7,6 +7,15 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.getHttpAdapter().get('/deployment-check', (_req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'LATEST CODE IS RUNNING',
+    commit: 'ec37b10680b84746d2e1ef40b9b028d1e1c5b461',
+    timestamp: new Date().toISOString(),
+  });
+});
+
   app.setGlobalPrefix(process.env.API_PREFIX ?? 'api');
 
   app.enableVersioning({
