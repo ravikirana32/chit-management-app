@@ -62,17 +62,17 @@ class ChitsController{
   return {success:true,data:{...rows[0],months}};
  }
  @Post(':id/publish')
-async publish(@Param('id') id: string, @CurrentUser() user: any) {
+ async publish(@Param('id') id: string, @CurrentUser() user: any) {
   return this.db.transaction(async transaction => {
 
     // 1. Lock the chit row.
     // Do NOT combine GROUP BY with FOR UPDATE.
     const [rows]: any = await this.db.query(
       `SELECT *
-       FROM chits
-       WHERE id=:id
-         AND creator_id=:user
-       FOR UPDATE`,
+      FROM chits
+      WHERE id=:id
+        AND creator_id=:user
+      FOR UPDATE`,
       {
         replacements: {
           id,
@@ -102,9 +102,9 @@ async publish(@Param('id') id: string, @CurrentUser() user: any) {
     // 3. Count active participants separately.
     const [participantRows]: any = await this.db.query(
       `SELECT COUNT(*)::int AS participant_count
-       FROM chit_participants
-       WHERE chit_id=:id
-         AND status='ACTIVE'`,
+      FROM chit_participants
+      WHERE chit_id=:id
+        AND status='ACTIVE'`,
       {
         replacements: {
           id,
@@ -127,11 +127,11 @@ async publish(@Param('id') id: string, @CurrentUser() user: any) {
     // 5. Activate all participants.
     await this.db.query(
       `UPDATE chit_participants
-       SET status='ACTIVE',
-           accepted_at=COALESCE(accepted_at,NOW()),
-           joined_at=COALESCE(joined_at,NOW()),
-           updated_at=NOW()
-       WHERE chit_id=:id`,
+      SET status='ACTIVE',
+          accepted_at=COALESCE(accepted_at,NOW()),
+          joined_at=COALESCE(joined_at,NOW()),
+          updated_at=NOW()
+      WHERE chit_id=:id`,
       {
         replacements: {
           id,
@@ -143,11 +143,11 @@ async publish(@Param('id') id: string, @CurrentUser() user: any) {
     // 6. Publish the chit.
     const [updated]: any = await this.db.query(
       `UPDATE chits
-       SET status='READY_TO_START',
-           published_at=NOW(),
-           updated_at=NOW()
-       WHERE id=:id
-       RETURNING *`,
+      SET status='READY_TO_START',
+          published_at=NOW(),
+          updated_at=NOW()
+      WHERE id=:id
+      RETURNING *`,
       {
         replacements: {
           id,
@@ -164,7 +164,7 @@ async publish(@Param('id') id: string, @CurrentUser() user: any) {
       },
     };
   });
-}
+  }
  }
-}
+
 @Module({controllers:[ChitsController]}) export class ChitsModule{}
