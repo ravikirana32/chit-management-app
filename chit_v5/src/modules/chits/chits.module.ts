@@ -62,17 +62,109 @@ class ChitsController{
   return {success:true,data:{...rows[0],months}};
  }
  @Post(':id/publish')
- async publish(@Param('id')id:string,@CurrentUser()user:any){
-  return this.db.transaction(async transaction=>{
-   const [rows]:any=await this.db.query(`SELECT c.*,COUNT(cp.id)::int AS participant_count FROM chits c LEFT JOIN chit_participants cp ON cp.chit_id=c.id AND cp.status='ACTIVE' WHERE c.id=:id AND c.creator_id=:user GROUP BY c.id FOR UPDATE`,{replacements:{id,user:user.sub},transaction});
-   if(!rows.length)throw new NotFoundException('Chit not found');
-   const c=rows[0];
-   if(c.status!=='DRAFT'&&c.status!=='INVITING'&&c.status!=='MEMBERS_CONFIRMED')throw new ConflictException('Chit cannot be published in its current state');
-   if(c.participant_count!==c.total_members)throw new ConflictException(`Final member count must be ${c.total_members}`);
-   await this.db.query(`UPDATE chit_participants SET status='ACTIVE',accepted_at=COALESCE(accepted_at,NOW()),joined_at=COALESCE(joined_at,NOW()),updated_at=NOW() WHERE chit_id=:id`,{replacements:{id},transaction});
-   const [updated]:any=await this.db.query(`UPDATE chits SET status='READY_TO_START',published_at=NOW(),updated_at=NOW() WHERE id=:id RETURNING *`,{replacements:{id},transaction});
-   return {success:true,data:{...updated[0],configurationLocked:true}};
+async publish(@Param('id') id: string, @CurrentUser() user: any) {
+  return this.db.transaction(async transaction => {
+
+    // 1. Lock the chit row.
+    // Do NOT combine GROUP BY with FOR UPDATE.
+    const [rows]: any = await this.db.query(
+      `SELECT *
+       FROM chits
+       WHERE id=:id
+         AND creator_id=:user
+       FOR UPDATE`,
+      {
+        replacements: {
+          id,
+          user: user.sub,
+        },
+        transaction,
+      },
+    );
+
+    if (!rows.length) {
+      throw new NotFoundException('Chit not found');
+    }
+
+    const c = rows[0];
+
+    // 2. Validate chit status.
+    if (
+      c.status !== 'DRAFT' &&
+      c.status !== 'INVITING' &&
+      c.status !== 'MEMBERS_CONFIRMED'
+    ) {
+      throw new ConflictException(
+        'Chit cannot be published in its current state',
+      );
+    }
+
+    // 3. Count active participants separately.
+    const [participantRows]: any = await this.db.query(
+      `SELECT COUNT(*)::int AS participant_count
+       FROM chit_participants
+       WHERE chit_id=:id
+         AND status='ACTIVE'`,
+      {
+        replacements: {
+          id,
+        },
+        transaction,
+      },
+    );
+
+    const participantCount = Number(
+      participantRows[0]?.participant_count ?? 0,
+    );
+
+    // 4. Ensure the final member count is correct.
+    if (participantCount !== Number(c.total_members)) {
+      throw new ConflictException(
+        `Final member count must be ${c.total_members}`,
+      );
+    }
+
+    // 5. Activate all participants.
+    await this.db.query(
+      `UPDATE chit_participants
+       SET status='ACTIVE',
+           accepted_at=COALESCE(accepted_at,NOW()),
+           joined_at=COALESCE(joined_at,NOW()),
+           updated_at=NOW()
+       WHERE chit_id=:id`,
+      {
+        replacements: {
+          id,
+        },
+        transaction,
+      },
+    );
+
+    // 6. Publish the chit.
+    const [updated]: any = await this.db.query(
+      `UPDATE chits
+       SET status='READY_TO_START',
+           published_at=NOW(),
+           updated_at=NOW()
+       WHERE id=:id
+       RETURNING *`,
+      {
+        replacements: {
+          id,
+        },
+        transaction,
+      },
+    );
+
+    return {
+      success: true,
+      data: {
+        ...updated[0],
+        configurationLocked: true,
+      },
+    };
   });
+}
  }
 }
 @Module({controllers:[ChitsController]}) export class ChitsModule{}
