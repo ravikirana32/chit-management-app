@@ -23,15 +23,17 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { DrawsModule } from './modules/draws/draws.module';
 import { ChitsModule } from './modules/chits/chits.module';
 import { ParticipantsModule } from './modules/participants/participants.module';
+import { AdminManagementModule } from './modules/admin-management/admin-management.module';
 
 @Module({
-  imports:
- [
+  imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     DatabaseModule,
     HealthModule,
     AuthModule,
     UsersModule,
+    AdminManagementModule,
     ChitsModule,
     ParticipantsModule,
     AuctionsModule,
