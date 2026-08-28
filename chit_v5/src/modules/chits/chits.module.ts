@@ -87,8 +87,20 @@ class ChitsController{
     }
 
     const c = rows[0];
+    console.log('[PUBLISH-DEBUG] LOCKED CHIT', {
+      chitId: c.id,
+      userId: user?.sub,
+      status: c.status,
+      totalMembers: c.total_members,
+      totalMonths: c.total_months,
+    });
 
     // 2. Validate chit status.
+    console.log('[PUBLISH-DEBUG] STATUS CHECK', {
+      status: c.status,
+      allowed: ['DRAFT', 'INVITING', 'MEMBERS_CONFIRMED'],
+    });
+
     if (
       c.status !== 'DRAFT' &&
       c.status !== 'INVITING' &&
@@ -98,6 +110,8 @@ class ChitsController{
         'Chit cannot be published in its current state',
       );
     }
+
+    console.log('[PUBLISH-DEBUG] STATUS CHECK PASSED', { status: c.status });
 
     // 3. Count active participants separately.
     const [participantRows]: any = await this.db.query(
@@ -116,6 +130,12 @@ class ChitsController{
     const participantCount = Number(
       participantRows[0]?.participant_count ?? 0,
     );
+
+    console.log('[PUBLISH-DEBUG] PARTICIPANT CHECK', {
+      chitId: id,
+      activeParticipantCount: participantCount,
+      requiredMemberCount: Number(c.total_members),
+    });
 
     // 4. Ensure the final member count is correct.
     if (participantCount !== Number(c.total_members)) {
@@ -140,6 +160,11 @@ class ChitsController{
       },
     );
 
+    console.log('[PUBLISH-DEBUG] PARTICIPANT CHECK PASSED', {
+      participantCount,
+      requiredMemberCount: Number(c.total_members),
+    });
+
     // 6. Publish the chit.
     const [updated]: any = await this.db.query(
       `UPDATE chits
@@ -155,6 +180,12 @@ class ChitsController{
         transaction,
       },
     );
+
+    console.log('[PUBLISH-DEBUG] PUBLISH SUCCESS', {
+      chitId: id,
+      newStatus: updated[0]?.status,
+      publishedAt: updated[0]?.published_at,
+    });
 
     return {
       success: true,
