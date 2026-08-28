@@ -313,7 +313,7 @@ export class AdminManagementController {
   @Post('agents')
   @ApiOperation({ summary: 'Create an agent profile and ensure AGENT role' })
   async createAgent(@Body() dto: CreateAgentDto) {
-    let userId = dto.userId;
+    let userId: string | undefined = dto.userId;
 
     if (!userId) {
       const mobile = normalizeMobile(dto.mobile);
@@ -327,6 +327,10 @@ export class AdminManagementController {
         );
       }
       userId = users[0].id;
+    }
+
+    if (!userId) {
+      throw new ForbiddenException('A valid userId is required');
     }
 
     await this.ensureUserExists(userId);
