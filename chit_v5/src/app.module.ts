@@ -24,6 +24,7 @@ import { DrawsModule } from './modules/draws/draws.module';
 import { ChitsModule } from './modules/chits/chits.module';
 import { ParticipantsModule } from './modules/participants/participants.module';
 import { AdminManagementModule } from './modules/admin-management/admin-management.module';
+import { InvitationsModule } from './modules/invitations/invitations.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { AdminManagementModule } from './modules/admin-management/admin-manageme
     AdminManagementModule,
     ChitsModule,
     ParticipantsModule,
+    InvitationsModule,
     AuctionsModule,
     NotificationsModule,
     LedgerModule,
