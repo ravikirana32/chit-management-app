@@ -17,8 +17,8 @@ export class AuctionAutoCloseService {
   async closeExpiredAuctions() {
     const [auctions]: any = await this.sequelize.query(
       `SELECT id FROM auctions
-       WHERE status='OPEN' AND closes_at <= NOW()
-       ORDER BY closes_at
+       WHERE status='OPEN' AND ends_at <= NOW()
+       ORDER BY ends_at
        LIMIT 100`,
     );
 
