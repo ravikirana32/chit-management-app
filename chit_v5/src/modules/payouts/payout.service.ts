@@ -36,7 +36,7 @@ export class PayoutService {
       const [updated]:any=await this.sequelize.query(
         `UPDATE payouts
          SET status=:status,payment_method=:method,transaction_reference=:reference,
-             settled_at=CASE WHEN :status='SETTLED' THEN NOW() ELSE NULL END,
+             settled_at=NOW(),
              notes=COALESCE(:notes,notes),updated_at=NOW()
          WHERE id=:payoutId
          RETURNING *`,
