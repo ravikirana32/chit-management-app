@@ -7,7 +7,7 @@ export class AuctionStateService {
 
   async getState(auctionId: string) {
     const [rows]: any = await this.sequelize.query(
-      `SELECT a.id,a.status,a.opens_at,a.closes_at,a.winning_bid_amount,
+      `SELECT a.id,a.status,a.starts_at,a.ends_at,a.winning_bid_amount,
               a.discount_amount,a.payout_amount,
               m.id AS month_id,m.month_number,m.scheduled_amount,
               m.scheduled_date
