@@ -12,6 +12,7 @@ export class CreateChitDto{
  @ApiProperty({example:5}) @IsInt() @Min(1) @Max(31) dueDay!:number;
  @ApiProperty({example:true}) @IsBoolean() creatorParticipates!:boolean;
  @ApiPropertyOptional({example:'200000.00'}) @IsOptional() @IsDecimal() firstMonthlyAmount?:string;
+ @ApiPropertyOptional({example:'5000.00',description:'Chit face/value amount used to trigger additional auctions'}) @IsOptional() @IsDecimal() totalChitAmount?:string;
  @ApiPropertyOptional({type:[String],example:['200000.00','210000.00']}) @IsOptional() @IsArray() @IsDecimal({}, {each:true}) monthlyAmounts?:string[];
  @ApiPropertyOptional({type:[Number],example:[3,8]}) @IsOptional() @IsArray() @IsInt({each:true}) agentMonthNumbers?:number[];
  @ApiPropertyOptional({example:'00000000-0000-0000-0000-000000000001'}) @IsOptional() @IsUUID() agentId?:string;
