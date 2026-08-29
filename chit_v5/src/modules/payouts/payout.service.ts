@@ -70,7 +70,7 @@ export class PayoutService {
          SET status=:status,
              payment_method=:method,
              transaction_reference=:reference,
-             paid_at=CASE WHEN :status='SETTLED' THEN NOW() ELSE NULL END,
+             paid_at=NOW(),
              notes=COALESCE(:notes,notes),
              updated_at=NOW()
          WHERE id=:payoutId
