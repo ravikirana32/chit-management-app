@@ -48,9 +48,18 @@ class ChitsController {
 
   return this.db.transaction(async transaction=>{
    if(agentMonths.length){
-    const [agentRows]:any=await this.db.query(
-      `SELECT id,user_id,name,status FROM agents WHERE id=:agentId`,
-      {replacements:{agentId:dto.agentId},transaction}
+    const [agentRows] = await sequelize.query(
+      `
+        SELECT id, user_id, name, status
+        FROM agents
+        WHERE (id = :agentId OR user_id = :agentId)
+          AND status = 'ACTIVE'
+        LIMIT 1
+      `,
+      {
+        replacements: { agentId: dto.agentId },
+        transaction,
+      },
     );
     if(!agentRows.length)throw new NotFoundException('Configured agent not found');
     if(agentRows[0].status!=='ACTIVE')throw new ConflictException('Configured agent is not active');
