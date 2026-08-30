@@ -41,7 +41,7 @@ export class CreateChitDto{
 
  @ApiPropertyOptional({
    example:'00000000-0000-0000-0000-000000000001',
-   description:'Agent receiving AGENT_CHIT month payouts. Required when agentMonthNumbers is not empty.'
+   description:'Agent user ID or Agent record ID. Backend resolves either to the active Agent record. Required when agentMonthNumbers is not empty.'
  })
  @IsOptional() @IsUUID() agentId?:string;
 }

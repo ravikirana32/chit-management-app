@@ -10,7 +10,7 @@ export class ChitMonthScheduleItemDto {
   @ApiProperty({ example: '20000.00', description: 'FIXED_DRAW ACTION: winner payout. AGENT_CHIT: direct payout to the configured agent. No draw is performed.' })
   @IsDecimal() winnerPayoutAmount!: string;
   @ApiProperty({ enum: ChitMonthType }) @IsEnum(ChitMonthType) monthType!: ChitMonthType;
-  @ApiPropertyOptional({ description: 'Required only for AGENT_CHIT months.' }) @IsOptional() @IsUUID() agentId?: string;
+  @ApiPropertyOptional({ description: 'Required only for AGENT_CHIT months. Accepts either the Agent user ID or Agent record ID.' }) @IsOptional() @IsUUID() agentId?: string;
 }
 
 export class SaveChitScheduleDto {

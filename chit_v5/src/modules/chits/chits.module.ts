@@ -46,9 +46,11 @@ class ChitsController {
   if(!Number.isFinite(totalChitAmount)||totalChitAmount<=0)
     throw new BadRequestException('totalChitAmount must be positive');
 
+  let resolvedAgentId: string | null = null;
+
   return this.db.transaction(async transaction=>{
    if(agentMonths.length){
-    const [agentRows] = await sequelize.query(
+    const [agentRows]: any = await this.db.query(
       `
         SELECT id, user_id, name, status
         FROM agents
@@ -57,12 +59,13 @@ class ChitsController {
         LIMIT 1
       `,
       {
-        replacements: { agent_id: agentId },
+        replacements: { agentId: dto.agentId },
         transaction,
       },
     );
     if(!agentRows.length)throw new NotFoundException('Configured agent not found');
     if(agentRows[0].status!=='ACTIVE')throw new ConflictException('Configured agent is not active');
+    resolvedAgentId = agentRows[0].id;
    }
 
    const [chits]:any=await this.db.query(`
@@ -98,7 +101,7 @@ class ChitsController {
       chit:chit.id,number:month,date:date.toISOString().slice(0,10),
       amount:amounts[i],payout:payoutAmounts[i],
       type:agentMonths.includes(month)?'AGENT_CHIT':'ACTION',
-      agent:agentMonths.includes(month)?(dto.agentId??null):null
+      agent:agentMonths.includes(month)?resolvedAgentId:null
     },transaction});
    }
 
@@ -265,11 +268,15 @@ class ChitsController {
 
     if(m.agentId){
       const [agentRows]:any=await this.db.query(
-        `SELECT id,status FROM agents WHERE id=:agentId`,
+        `SELECT id,user_id,name,status FROM agents
+         WHERE (id=:agentId OR user_id=:agentId)
+           AND status='ACTIVE'
+         LIMIT 1`,
         {replacements:{agentId:m.agentId},transaction}
       );
       if(!agentRows.length)throw new NotFoundException(`Agent not found for month ${m.monthNumber}`);
       if(agentRows[0].status!=='ACTIVE')throw new ConflictException(`Agent is not active for month ${m.monthNumber}`);
+      m.agentId=agentRows[0].id;
     }
 
     await this.db.query(`

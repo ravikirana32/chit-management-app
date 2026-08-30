@@ -14,6 +14,17 @@ export class AgentCommissionService {
       if(!rows.length) throw new NotFoundException('Month not found');
       if(rows[0].creator_id!==actor) throw new ConflictException('Only creator can record commission');
       if(rows[0].month_type!=='AGENT_CHIT') throw new BadRequestException('This month is not an Agent Chit month');
+      if(!rows[0].agent_id) throw new ConflictException('No configured agent for this month');
+
+      const [agentRows]:any=await this.sequelize.query(
+        `SELECT id,user_id,status FROM agents
+         WHERE (id=:agentId OR user_id=:agentId)
+           AND status='ACTIVE'
+         LIMIT 1`,
+        {replacements:{agentId},transaction});
+      if(!agentRows.length) throw new NotFoundException('Agent not found');
+      if(agentRows[0].id!==rows[0].agent_id)
+        throw new ConflictException('Agent does not match the configured agent for this month');
 
       const [existing]:any=await this.sequelize.query(
         `SELECT id FROM ledger_entries WHERE chit_month_id=:monthId AND entry_type='AGENT_COMMISSION' LIMIT 1`,
