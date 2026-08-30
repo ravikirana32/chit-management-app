@@ -11,34 +11,334 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 @Controller({path:'chits',version:'v1'})
 class ChitsController {
  constructor(private readonly db:Sequelize){}
- @Post() @ApiOperation({summary:'Create a draft chit and its monthly schedule'})
+
+ @Post()
+ @ApiOperation({summary:'Create a draft chit with monthly contribution, payout and optional AGENT_CHIT schedule'})
  async create(@Body()dto:CreateChitDto,@CurrentUser()user:any){
-  if(dto.monthlyAmounts?.length&&dto.monthlyAmounts.length!==dto.totalMonths)throw new BadRequestException('monthlyAmounts must match totalMonths');
-  const amounts=dto.monthlyAmounts?.length?dto.monthlyAmounts.map(Number):Array(dto.totalMonths).fill(Number(dto.firstMonthlyAmount));
-  if(amounts.some((x:number)=>!Number.isFinite(x)||x<=0))throw new BadRequestException('Monthly amounts must be positive');
-  const agentMonths=[...(dto.agentMonthNumbers??[])]; const bad=agentMonths.some(n=>n<1||n>dto.totalMonths)||new Set(agentMonths).size!==agentMonths.length; if(bad)throw new BadRequestException('Invalid agent month numbers');
+  if(dto.monthlyAmounts?.length&&dto.monthlyAmounts.length!==dto.totalMonths)
+    throw new BadRequestException('monthlyAmounts must match totalMonths');
+
+  const amounts=dto.monthlyAmounts?.length
+    ?dto.monthlyAmounts.map(Number)
+    :Array(dto.totalMonths).fill(Number(dto.firstMonthlyAmount));
+
+  if(amounts.some((x:number)=>!Number.isFinite(x)||x<=0))
+    throw new BadRequestException('Monthly contribution amounts must be positive');
+
+  if(dto.fixedDrawPayoutAmounts?.length&&dto.fixedDrawPayoutAmounts.length!==dto.totalMonths)
+    throw new BadRequestException('fixedDrawPayoutAmounts must match totalMonths');
+
+  const payoutAmounts=dto.fixedDrawPayoutAmounts?.length
+    ?dto.fixedDrawPayoutAmounts.map(Number)
+    :amounts.slice();
+
+  if(payoutAmounts.some((x:number)=>!Number.isFinite(x)||x<=0))
+    throw new BadRequestException('Monthly payout amounts must be positive');
+
+  const agentMonths=[...(dto.agentMonthNumbers??[])];
+  const bad=agentMonths.some(n=>n<1||n>dto.totalMonths)||new Set(agentMonths).size!==agentMonths.length;
+  if(bad)throw new BadRequestException('Invalid agent month numbers');
+
+  if(agentMonths.length&&!dto.agentId)
+    throw new BadRequestException('agentId is required when AGENT_CHIT months are configured');
+
   const totalChitAmount=Number(dto.totalChitAmount??(amounts[0]*dto.totalMembers));
-  if(!Number.isFinite(totalChitAmount)||totalChitAmount<=0)throw new BadRequestException('totalChitAmount must be positive');
+  if(!Number.isFinite(totalChitAmount)||totalChitAmount<=0)
+    throw new BadRequestException('totalChitAmount must be positive');
+
   return this.db.transaction(async transaction=>{
-   const [chits]:any=await this.db.query(`INSERT INTO chits(id,creator_id,name,description,chit_type,status,total_members,total_months,total_chit_amount,accumulated_savings_amount,completed_months,start_date,due_day,creator_participates,collection_grace_days,agent_commission_mode,created_at,updated_at) VALUES(gen_random_uuid(),:creator,:name,:description,:type,'DRAFT',:members,:months,:face,0,0,:start,:dueDay,:creatorParticipates,7,:commissionMode,NOW(),NOW()) RETURNING *`,{replacements:{creator:user.sub,name:dto.name,description:dto.description??null,type:dto.chitType,members:dto.totalMembers,months:dto.totalMonths,face:totalChitAmount,start:dto.startDate,dueDay:dto.dueDay,creatorParticipates:dto.creatorParticipates,commissionMode:agentMonths.length?'PER_AGENT_MONTH':'NONE'},transaction});
+   if(agentMonths.length){
+    const [agentRows]:any=await this.db.query(
+      `SELECT id,user_id,name,status FROM agents WHERE id=:agentId`,
+      {replacements:{agentId:dto.agentId},transaction}
+    );
+    if(!agentRows.length)throw new NotFoundException('Configured agent not found');
+    if(agentRows[0].status!=='ACTIVE')throw new ConflictException('Configured agent is not active');
+   }
+
+   const [chits]:any=await this.db.query(`
+     INSERT INTO chits
+     (id,creator_id,name,description,chit_type,status,total_members,total_months,
+      total_chit_amount,accumulated_savings_amount,completed_months,start_date,due_day,
+      creator_participates,collection_grace_days,agent_commission_mode,created_at,updated_at)
+     VALUES(gen_random_uuid(),:creator,:name,:description,:type,'DRAFT',:members,:months,
+      :face,0,0,:start,:dueDay,:creatorParticipates,7,:commissionMode,NOW(),NOW())
+     RETURNING *
+   `,{replacements:{
+     creator:user.sub,name:dto.name,description:dto.description??null,type:dto.chitType,
+     members:dto.totalMembers,months:dto.totalMonths,face:totalChitAmount,
+     start:dto.startDate,dueDay:dto.dueDay,creatorParticipates:dto.creatorParticipates,
+     commissionMode:agentMonths.length?'PER_AGENT_MONTH':'NONE'
+   },transaction});
+
    const chit=chits[0];
-   for(let i=0;i<amounts.length;i++){const month=i+1;const date=new Date(dto.startDate);date.setMonth(date.getMonth()+i);date.setDate(Math.min(dto.dueDay,28));await this.db.query(`INSERT INTO chit_months(id,chit_id,month_number,scheduled_date,scheduled_amount,month_type,status,agent_id,created_at,updated_at) VALUES(gen_random_uuid(),:chit,:number,:date,:amount,:type,'SCHEDULED',:agent,NOW(),NOW())`,{replacements:{chit:chit.id,number:month,date:date.toISOString().slice(0,10),amount:amounts[i],type:agentMonths.includes(month)?'AGENT_CHIT':'ACTION',agent:agentMonths.includes(month)?(dto.agentId??null):null},transaction});}
-   return {success:true,data:chit};
+
+   for(let i=0;i<amounts.length;i++){
+    const month=i+1;
+    const date=new Date(dto.startDate);
+    date.setMonth(date.getMonth()+i);
+    date.setDate(Math.min(dto.dueDay,28));
+
+    await this.db.query(`
+      INSERT INTO chit_months
+      (id,chit_id,month_number,scheduled_date,scheduled_amount,winner_payout_amount,
+       month_type,status,agent_id,created_at,updated_at)
+      VALUES(gen_random_uuid(),:chit,:number,:date,:amount,:payout,:type,
+       'SCHEDULED',:agent,NOW(),NOW())
+    `,{replacements:{
+      chit:chit.id,number:month,date:date.toISOString().slice(0,10),
+      amount:amounts[i],payout:payoutAmounts[i],
+      type:agentMonths.includes(month)?'AGENT_CHIT':'ACTION',
+      agent:agentMonths.includes(month)?(dto.agentId??null):null
+    },transaction});
+   }
+
+   const [months]:any=await this.db.query(
+     `SELECT * FROM chit_months WHERE chit_id=:id ORDER BY month_number`,
+     {replacements:{id:chit.id},transaction}
+   );
+
+   return {success:true,data:{...chit,months}};
   });
  }
- @Get() async list(@CurrentUser()user:any){const [rows]:any=await this.db.query(`SELECT * FROM chits WHERE creator_id=:user OR id IN(SELECT chit_id FROM chit_participants WHERE user_id=:user) ORDER BY created_at DESC`,{replacements:{user:user.sub}});return {success:true,data:rows};}
- @Get(':id') async get(@Param('id')id:string,@CurrentUser()user:any){const [rows]:any=await this.db.query(`SELECT * FROM chits WHERE id=:id AND(creator_id=:user OR id IN(SELECT chit_id FROM chit_participants WHERE user_id=:user))`,{replacements:{id,user:user.sub}});if(!rows.length)throw new NotFoundException('Chit not found');const [months]:any=await this.db.query(`SELECT * FROM chit_months WHERE chit_id=:id ORDER BY month_number`,{replacements:{id}});return {success:true,data:{...rows[0],months,remainingMonths:Math.max(0,Number(rows[0].total_months)-Number(rows[0].completed_months||0))}};}
- @Put(':id/month-schedule') @ApiOperation({summary:'Set monthly scheduled amounts/dates before the chit is published'})
+
+ @Get() async list(@CurrentUser()user:any){
+  const [rows]:any=await this.db.query(
+   `SELECT * FROM chits WHERE creator_id=:user OR id IN(SELECT chit_id FROM chit_participants WHERE user_id=:user) ORDER BY created_at DESC`,
+   {replacements:{user:user.sub}}
+  );
+  return {success:true,data:rows};
+ }
+
+ @Get(':id')
+ @ApiOperation({summary:'Get chit, monthly schedule and current accumulated savings'})
+ async get(@Param('id')id:string,@CurrentUser()user:any){
+  const [rows]:any=await this.db.query(
+   `SELECT * FROM chits WHERE id=:id AND(creator_id=:user OR id IN(SELECT chit_id FROM chit_participants WHERE user_id=:user))`,
+   {replacements:{id,user:user.sub}}
+  );
+  if(!rows.length)throw new NotFoundException('Chit not found');
+
+  const [months]:any=await this.db.query(`
+    SELECT cm.*,
+      COALESCE((
+        SELECT SUM(p.amount) FROM payments p
+        WHERE p.chit_month_id=cm.id
+          AND p.status IN ('VERIFIED','PAID','SETTLED','COMPLETED')
+      ),0) AS verified_collections
+    FROM chit_months cm
+    WHERE cm.chit_id=:id
+    ORDER BY cm.month_number
+  `,{replacements:{id}});
+
+  const chit=rows[0];
+  const currentSavings=Number(chit.accumulated_savings_amount||0);
+
+  return {
+    success:true,
+    data:{
+      ...chit,
+      currentSavings,
+      savingsDisplay:`₹${currentSavings.toFixed(2)}`,
+      months,
+      remainingMonths:Math.max(0,Number(chit.total_months)-Number(chit.completed_months||0)),
+      configurationNote:'For AGENT_CHIT months there is no draw. All active members still contribute and the configured agent receives winner_payout_amount.'
+    }
+  };
+ }
+
+ @Get(':id/financial-summary')
+ @ApiOperation({summary:'Show agent current savings, monthly planned payout, projected savings and final zero-balance adjustment amount'})
+ async financialSummary(@Param('id')id:string,@CurrentUser()user:any){
+  const [rows]:any=await this.db.query(
+   `SELECT * FROM chits WHERE id=:id AND creator_id=:user`,
+   {replacements:{id,user:user.sub}}
+  );
+  if(!rows.length)throw new NotFoundException('Chit not found');
+
+  const chit=rows[0];
+  const [months]:any=await this.db.query(`
+    SELECT cm.*,
+      COALESCE((
+        SELECT SUM(p.amount) FROM payments p
+        WHERE p.chit_month_id=cm.id
+          AND p.status IN ('VERIFIED','PAID','SETTLED','COMPLETED')
+      ),0)::numeric AS verified_collections
+    FROM chit_months cm
+    WHERE cm.chit_id=:id
+    ORDER BY cm.month_number
+  `,{replacements:{id}});
+
+  let projectedSavings=Number(chit.accumulated_savings_amount||0);
+  const summary=months.map((m:any)=>{
+    const contribution=Number(m.scheduled_amount||0);
+    const expectedCollection=contribution*Number(chit.total_members||0);
+    const verified=Number(m.verified_collections||0);
+    const assumedCollection=m.status==='COMPLETED' ? verified : expectedCollection;
+    const payout=Number(m.winner_payout_amount||0);
+    const projectedClosing=projectedSavings+assumedCollection-payout;
+    const finalZeroAdjustment=m.month_number===Number(chit.total_months)
+      ?projectedSavings+assumedCollection
+      :null;
+
+    const row={
+      monthNumber:Number(m.month_number),
+      monthType:m.month_type,
+      scheduledDate:m.scheduled_date,
+      contributionPerMember:contribution,
+      expectedCollection,
+      verifiedCollections:verified,
+      plannedPayout:payout,
+      openingSavings:projectedSavings,
+      projectedClosingSavings:projectedClosing,
+      finalZeroAdjustmentPayout:finalZeroAdjustment,
+      noDraw:m.month_type==='AGENT_CHIT'
+    };
+
+    projectedSavings=projectedClosing;
+    return row;
+  });
+
+  return {
+    success:true,
+    data:{
+      chitId:id,
+      currentSavedAmount:Number(chit.accumulated_savings_amount||0),
+      currentSavedAmountDisplay:`₹${Number(chit.accumulated_savings_amount||0).toFixed(2)}`,
+      projectedFinalSavings:projectedSavings,
+      projectedFinalSavingsDisplay:`₹${projectedSavings.toFixed(2)}`,
+      finalMonthPayoutNeededForZeroBalance:
+        summary.length?summary[summary.length-1].finalZeroAdjustmentPayout:null,
+      rule:'The agent can see accumulated savings before choosing/confirming later payouts. To finish at zero, the final month payout can be adjusted to the opening savings plus that month collection, subject to actual verified collections and sufficient funds.',
+      months:summary
+    }
+  };
+ }
+
+ @Put(':id/month-schedule')
+ @ApiOperation({summary:'Set monthly contribution/payout/date and AGENT_CHIT months before publication'})
  async saveSchedule(@Param('id')id:string,@Body()dto:SaveChitScheduleDto,@CurrentUser()user:any){
   return this.db.transaction(async transaction=>{
-   const [c]:any=await this.db.query(`SELECT * FROM chits WHERE id=:id AND creator_id=:user FOR UPDATE`,{replacements:{id,user:user.sub},transaction});if(!c.length)throw new NotFoundException('Chit not found');const chit=c[0];
-   if(!['DRAFT','INVITING','MEMBERS_CONFIRMED'].includes(chit.status))throw new ConflictException('Month schedule cannot be changed after publication/activation');
-   if(dto.months.length!==Number(chit.total_months))throw new BadRequestException(`Exactly ${chit.total_months} monthly entries are required`);
-   const seen=new Set<number>();for(const m of dto.months){if(seen.has(m.monthNumber))throw new BadRequestException(`Month ${m.monthNumber} is duplicated`);seen.add(m.monthNumber);if(m.monthNumber<1||m.monthNumber>Number(chit.total_months))throw new BadRequestException('Invalid month number');const amount=Number(m.scheduledAmount);if(!Number.isFinite(amount)||amount<=0)throw new BadRequestException(`Month ${m.monthNumber} amount must be positive`);if(m.monthType==='AGENT_CHIT'&&!m.agentId)throw new BadRequestException(`Month ${m.monthNumber} requires an agent`);if(m.monthType!=='AGENT_CHIT'&&m.agentId)throw new BadRequestException(`Month ${m.monthNumber} cannot contain an agent`);await this.db.query(`UPDATE chit_months SET scheduled_date=:date,scheduled_amount=:amount,month_type=:type,agent_id=:agent,updated_at=NOW() WHERE chit_id=:chitId AND month_number=:number`,{replacements:{date:m.scheduledDate,amount,type:m.monthType,agent:m.agentId??null,chitId:id,number:m.monthNumber},transaction});}
-   if(dto.totalChitAmount!==undefined){const face=Number(dto.totalChitAmount);if(!Number.isFinite(face)||face<=0)throw new BadRequestException('totalChitAmount must be positive');await this.db.query(`UPDATE chits SET total_chit_amount=:face,updated_at=NOW() WHERE id=:id`,{replacements:{id,face},transaction});}
-   const [months]:any=await this.db.query(`SELECT * FROM chit_months WHERE chit_id=:id ORDER BY month_number`,{replacements:{id},transaction});const [updated]:any=await this.db.query(`SELECT * FROM chits WHERE id=:id`,{replacements:{id},transaction});return {success:true,data:{chit:updated[0],months}};
+   const [c]:any=await this.db.query(
+    `SELECT * FROM chits WHERE id=:id AND creator_id=:user FOR UPDATE`,
+    {replacements:{id,user:user.sub},transaction}
+   );
+   if(!c.length)throw new NotFoundException('Chit not found');
+
+   const chit=c[0];
+   if(!['DRAFT','INVITING','MEMBERS_CONFIRMED'].includes(chit.status))
+    throw new ConflictException('Month schedule cannot be changed after publication/activation');
+
+   if(dto.months.length!==Number(chit.total_months))
+    throw new BadRequestException(`Exactly ${chit.total_months} monthly entries are required`);
+
+   const seen=new Set<number>();
+
+   for(const m of dto.months){
+    if(seen.has(m.monthNumber))throw new BadRequestException(`Month ${m.monthNumber} is duplicated`);
+    seen.add(m.monthNumber);
+
+    if(m.monthNumber<1||m.monthNumber>Number(chit.total_months))
+      throw new BadRequestException('Invalid month number');
+
+    const amount=Number(m.scheduledAmount);
+    const payout=Number(m.winnerPayoutAmount);
+
+    if(!Number.isFinite(amount)||amount<=0)
+      throw new BadRequestException(`Month ${m.monthNumber} contribution amount must be positive`);
+    if(!Number.isFinite(payout)||payout<=0)
+      throw new BadRequestException(`Month ${m.monthNumber} payout amount must be positive`);
+
+    if(m.monthType==='AGENT_CHIT'&&!m.agentId)
+      throw new BadRequestException(`Month ${m.monthNumber} requires an agent`);
+    if(m.monthType!=='AGENT_CHIT'&&m.agentId)
+      throw new BadRequestException(`Month ${m.monthNumber} cannot contain an agent`);
+
+    if(m.agentId){
+      const [agentRows]:any=await this.db.query(
+        `SELECT id,status FROM agents WHERE id=:agentId`,
+        {replacements:{agentId:m.agentId},transaction}
+      );
+      if(!agentRows.length)throw new NotFoundException(`Agent not found for month ${m.monthNumber}`);
+      if(agentRows[0].status!=='ACTIVE')throw new ConflictException(`Agent is not active for month ${m.monthNumber}`);
+    }
+
+    await this.db.query(`
+      UPDATE chit_months
+      SET scheduled_date=:date,scheduled_amount=:amount,
+          winner_payout_amount=:payout,
+          month_type=:type,agent_id=:agent,updated_at=NOW()
+      WHERE chit_id=:chitId AND month_number=:number
+    `,{replacements:{
+      date:m.scheduledDate,amount,payout,
+      type:m.monthType,agent:m.agentId??null,chitId:id,number:m.monthNumber
+    },transaction});
+   }
+
+   if(dto.totalChitAmount!==undefined){
+    const face=Number(dto.totalChitAmount);
+    if(!Number.isFinite(face)||face<=0)throw new BadRequestException('totalChitAmount must be positive');
+    await this.db.query(`UPDATE chits SET total_chit_amount=:face,updated_at=NOW() WHERE id=:id`,{replacements:{id,face},transaction});
+   }
+
+   const [months]:any=await this.db.query(
+    `SELECT * FROM chit_months WHERE chit_id=:id ORDER BY month_number`,
+    {replacements:{id},transaction}
+   );
+   const [updated]:any=await this.db.query(`SELECT * FROM chits WHERE id=:id`,{replacements:{id},transaction});
+
+   return {success:true,data:{chit:updated[0],months}};
   });
  }
- @Post(':id/publish') async publish(@Param('id')id:string,@CurrentUser()user:any){return this.db.transaction(async transaction=>{const [rows]:any=await this.db.query(`SELECT * FROM chits WHERE id=:id AND creator_id=:user FOR UPDATE`,{replacements:{id,user:user.sub},transaction});if(!rows.length)throw new NotFoundException('Chit not found');const c=rows[0];if(!['DRAFT','INVITING','MEMBERS_CONFIRMED'].includes(c.status))throw new ConflictException('Chit cannot be published in its current state');const [participantRows]:any=await this.db.query(`SELECT COUNT(*)::int AS participant_count FROM chit_participants WHERE chit_id=:id AND status='ACTIVE'`,{replacements:{id},transaction});if(Number(participantRows[0]?.participant_count??0)!==Number(c.total_members))throw new ConflictException(`Final member count must be ${c.total_members}`);await this.db.query(`UPDATE chit_participants SET status='ACTIVE',accepted_at=COALESCE(accepted_at,NOW()),joined_at=COALESCE(joined_at,NOW()),updated_at=NOW() WHERE chit_id=:id`,{replacements:{id},transaction});const [updated]:any=await this.db.query(`UPDATE chits SET status='READY_TO_START',published_at=NOW(),updated_at=NOW() WHERE id=:id RETURNING *`,{replacements:{id},transaction});return {success:true,data:{...updated[0],configurationLocked:true}};});}
+
+ @Post(':id/publish') async publish(@Param('id')id:string,@CurrentUser()user:any){
+  return this.db.transaction(async transaction=>{
+   const [rows]:any=await this.db.query(
+    `SELECT * FROM chits WHERE id=:id AND creator_id=:user FOR UPDATE`,
+    {replacements:{id,user:user.sub},transaction}
+   );
+   if(!rows.length)throw new NotFoundException('Chit not found');
+
+   const c=rows[0];
+   if(!['DRAFT','INVITING','MEMBERS_CONFIRMED'].includes(c.status))
+    throw new ConflictException('Chit cannot be published in its current state');
+
+   const [bad]:any=await this.db.query(`
+     SELECT month_number FROM chit_months
+     WHERE chit_id=:id AND (
+       scheduled_amount IS NULL OR scheduled_amount<=0 OR
+       winner_payout_amount IS NULL OR winner_payout_amount<=0 OR
+       (month_type='AGENT_CHIT' AND agent_id IS NULL)
+     )
+     ORDER BY month_number
+   `,{replacements:{id},transaction});
+
+   if(bad.length)
+     throw new ConflictException(`Every month needs contribution/payout; every AGENT_CHIT month needs an agent. First invalid month: ${bad[0].month_number}`);
+
+   const [participantRows]:any=await this.db.query(
+    `SELECT COUNT(*)::int AS participant_count FROM chit_participants WHERE chit_id=:id AND status='ACTIVE'`,
+    {replacements:{id},transaction}
+   );
+   if(Number(participantRows[0]?.participant_count??0)!==Number(c.total_members))
+    throw new ConflictException(`Final member count must be ${c.total_members}`);
+
+   await this.db.query(`
+    UPDATE chit_participants
+    SET status='ACTIVE',accepted_at=COALESCE(accepted_at,NOW()),
+        joined_at=COALESCE(joined_at,NOW()),updated_at=NOW()
+    WHERE chit_id=:id
+   `,{replacements:{id},transaction});
+
+   const [updated]:any=await this.db.query(`
+    UPDATE chits SET status='READY_TO_START',published_at=NOW(),updated_at=NOW()
+    WHERE id=:id RETURNING *
+   `,{replacements:{id},transaction});
+
+   return {success:true,data:{...updated[0],configurationLocked:true}};
+  });
+ }
 }
-@Module({controllers:[ChitsController]}) export class ChitsModule{}
+
+@Module({controllers:[ChitsController]})
+export class ChitsModule{}

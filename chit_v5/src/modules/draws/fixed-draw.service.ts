@@ -5,39 +5,490 @@ import { Sequelize } from 'sequelize-typescript';
 export class FixedDrawService {
   constructor(private readonly sequelize:Sequelize){}
 
-  async startDraw(chitId:string, monthId:string, actorUserId:string){
+  private async loadMonth(chitId:string, monthId:string, transaction:any){
+    const [rows]:any=await this.sequelize.query(`
+      SELECT m.*, c.creator_id, c.status AS chit_status, c.chit_type,
+             c.total_members, c.accumulated_savings_amount, c.total_chit_amount
+      FROM chit_months m
+      JOIN chits c ON c.id=m.chit_id
+      WHERE m.id=:monthId AND m.chit_id=:chitId
+      FOR UPDATE OF m, c
+    `,{replacements:{monthId,chitId},transaction});
+    if(!rows.length) throw new NotFoundException('Chit month not found');
+    return rows[0];
+  }
+
+  private async ensureCreator(chitId:string, actorUserId:string, transaction:any){
+    const [rows]:any=await this.sequelize.query(
+      `SELECT * FROM chits WHERE id=:chitId AND creator_id=:actor FOR UPDATE`,
+      {replacements:{chitId,actor:actorUserId},transaction}
+    );
+    if(!rows.length) throw new NotFoundException('Chit not found or creator access denied');
+    return rows[0];
+  }
+
+  async startDraw(chitId:string, dto:any, actorUserId:string){
     return this.sequelize.transaction(async transaction=>{
-      const [months]:any=await this.sequelize.query(`SELECT m.*,c.creator_id,c.status AS chit_status FROM chit_months m JOIN chits c ON c.id=m.chit_id WHERE m.id=:monthId AND m.chit_id=:chitId FOR UPDATE`,{replacements:{monthId,chitId},transaction});
-      if(!months.length) throw new NotFoundException('Chit month not found');
-      const m=months[0];
-      if(m.creator_id!==actorUserId) throw new ConflictException('Only creator can start the draw');
+      const m=await this.loadMonth(chitId,dto.chitMonthId,transaction);
+      if(m.creator_id!==actorUserId) throw new ConflictException('Only creator can open the draw');
+      if(m.chit_type!=='FIXED_DRAW') throw new BadRequestException('This endpoint is only for FIXED_DRAW chits');
       if(!['READY_TO_START','ACTIVE','RUNNING'].includes(m.chit_status)) throw new ConflictException('Chit is not ready for draw');
-      if(m.month_type!=='ACTION') throw new BadRequestException('Agent Chit month cannot run a draw');
+      if(m.month_type==='AGENT_CHIT') throw new BadRequestException('AGENT_CHIT month does not have a draw');
       if(!['SCHEDULED','READY_FOR_ACTION','COLLECTION'].includes(m.status)) throw new ConflictException('Month is not available for draw');
-      const [existing]:any=await this.sequelize.query(`SELECT id,status FROM draws WHERE chit_month_id=:monthId FOR UPDATE`,{replacements:{monthId},transaction});
+
+      const [existing]:any=await this.sequelize.query(
+        `SELECT id,status FROM draws WHERE chit_month_id=:monthId FOR UPDATE`,
+        {replacements:{monthId:dto.chitMonthId},transaction}
+      );
       if(existing.length) throw new ConflictException('A draw already exists for this month');
 
       const [eligible]:any=await this.sequelize.query(`
         SELECT cp.id,cp.user_id,cp.participant_sequence
         FROM chit_participants cp
-        WHERE cp.chit_id=:chitId AND cp.status='ACTIVE'
-          AND NOT EXISTS (SELECT 1 FROM draw_winners dw JOIN draws d ON d.id=dw.draw_id WHERE dw.chit_participant_id=cp.id AND d.chit_id=:chitId)
-          AND NOT EXISTS (SELECT 1 FROM auction_winners aw JOIN auctions a ON a.id=aw.auction_id WHERE aw.chit_participant_id=cp.id AND a.chit_id=:chitId)
-          AND NOT EXISTS (SELECT 1 FROM contribution_obligations o JOIN chit_months om ON om.id=o.chit_month_id WHERE o.chit_participant_id=cp.id AND om.chit_id=:chitId AND o.status IN ('OVERDUE','DEFAULTED','DISPUTED'))
-        ORDER BY cp.participant_sequence FOR UPDATE`,{replacements:{chitId},transaction});
+        WHERE cp.chit_id=:chitId
+          AND cp.status='ACTIVE'
+          AND NOT EXISTS (
+            SELECT 1 FROM draw_winners dw
+            JOIN draws d ON d.id=dw.draw_id
+            WHERE dw.chit_participant_id=cp.id AND d.chit_id=:chitId
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM auction_winners aw
+            JOIN auctions a ON a.id=aw.auction_id
+            WHERE aw.chit_participant_id=cp.id AND a.chit_id=:chitId
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM contribution_obligations o
+            JOIN chit_months om ON om.id=o.chit_month_id
+            WHERE o.chit_participant_id=cp.id
+              AND om.chit_id=:chitId
+              AND o.status IN ('OVERDUE','DEFAULTED','DISPUTED')
+          )
+        ORDER BY cp.participant_sequence
+        FOR UPDATE OF cp
+      `,{replacements:{chitId},transaction});
       if(!eligible.length) throw new BadRequestException('No eligible participants remain');
 
-      const [draws]:any=await this.sequelize.query(`INSERT INTO draws (id,chit_id,chit_month_id,status,selection_method,scheduled_at,started_at,executed_by,rules_snapshot,idempotency_key,created_at,updated_at) VALUES(gen_random_uuid(),:chitId,:monthId,'IN_PROGRESS','RANDOM',NOW(),NOW(),:actor,:rules,CONCAT('draw:',:monthId),NOW(),NOW()) RETURNING *`,{replacements:{chitId,monthId,actor:actorUserId,rules:JSON.stringify({winnerCount:1,previousWinnerExcluded:true,defaultExcluded:true})},transaction});
+      const opens=dto.interestOpensAt?new Date(dto.interestOpensAt):new Date();
+      const closes=dto.interestClosesAt?new Date(dto.interestClosesAt):null;
+      const drawAt=dto.drawAt?new Date(dto.drawAt):null;
+      if(closes && closes<=opens) throw new BadRequestException('interestClosesAt must be after interestOpensAt');
+      if(drawAt && closes && drawAt<closes) throw new BadRequestException('drawAt must be at or after interestClosesAt');
+
+      const [draws]:any=await this.sequelize.query(`
+        INSERT INTO draws
+        (id,chit_id,chit_month_id,status,selection_method,scheduled_at,started_at,executed_by,rules_snapshot,idempotency_key,created_at,updated_at)
+        VALUES
+        (gen_random_uuid(),:chitId,:monthId,'IN_PROGRESS','RANDOM',:drawAt,:opens,:actor,:rules,CONCAT('draw:',:monthId),NOW(),NOW())
+        RETURNING *
+      `,{replacements:{
+        chitId,monthId:dto.chitMonthId,drawAt:drawAt||closes||opens,opens,actor:actorUserId,
+        rules:JSON.stringify({
+          winnerCount:1,
+          previousWinnerExcluded:true,
+          defaultToAllEligibleWhenNoInterest:true,
+          interestWindow:true,
+          fixedDraw:true
+        })
+      },transaction});
       const draw=draws[0];
-      for(const p of eligible){ await this.sequelize.query(`INSERT INTO draw_participants (id,draw_id,chit_participant_id,eligibility_status,participant_sequence,created_at,updated_at) VALUES(gen_random_uuid(),:drawId,:pid,'ELIGIBLE',:seq,NOW(),NOW())`,{replacements:{drawId:draw.id,pid:p.id,seq:p.participant_sequence},transaction}); }
-      const [winnerRows]:any=await this.sequelize.query(`SELECT chit_participant_id FROM draw_participants WHERE draw_id=:drawId AND eligibility_status='ELIGIBLE' ORDER BY random() LIMIT 1`,{replacements:{drawId:draw.id},transaction});
-      const winnerId=winnerRows[0].chit_participant_id;
-      const [winner]:any=await this.sequelize.query(`INSERT INTO draw_winners (id,draw_id,chit_participant_id,selected_at,selection_method,result_reference,created_at,updated_at) VALUES(gen_random_uuid(),:drawId,:pid,NOW(),'RANDOM',:ref,NOW(),NOW()) RETURNING *`,{replacements:{drawId:draw.id,pid:winnerId,ref:'DRAW-'+draw.id},transaction});
-      const [payout]:any=await this.sequelize.query(`INSERT INTO payouts (id,chit_id,chit_month_id,recipient_user_id,amount,payment_method,status,recorded_by,notes,created_at,updated_at) SELECT gen_random_uuid(),:chitId,:monthId,cp.user_id,m.scheduled_amount,'UPI','PENDING',:actor,'Fixed Draw winner payout',NOW(),NOW() FROM chit_participants cp JOIN chit_months m ON m.id=:monthId WHERE cp.id=:pid RETURNING *`,{replacements:{chitId,monthId,actor:actorUserId,pid:winnerId},transaction});
-      await this.sequelize.query(`UPDATE draws SET status='COMPLETED',completed_at=NOW(),updated_at=NOW() WHERE id=:drawId`,{replacements:{drawId:draw.id},transaction});
-      await this.sequelize.query(`UPDATE chit_months SET status='COMPLETED',updated_at=NOW() WHERE id=:monthId`,{replacements:{monthId},transaction});
-      await this.sequelize.query(`INSERT INTO audit_logs (id,actor_user_id,chit_id,action,entity_type,entity_id,after_data,created_at,updated_at) VALUES(gen_random_uuid(),:actor,:chitId,'FIXED_DRAW_COMPLETED','DRAW',:drawId,:data,NOW(),NOW())`,{replacements:{actor:actorUserId,chitId,drawId:draw.id,data:JSON.stringify({winnerParticipantId:winnerId,eligibleCount:eligible.length,payoutAmount:m.scheduled_amount})},transaction});
-      return {draw,winner:winner[0],payout:payout[0],eligibleCount:eligible.length,configuration:'Winner remains an active participant and continues all future contribution obligations.'};
+
+      for(const p of eligible){
+        await this.sequelize.query(`
+          INSERT INTO draw_participants
+          (id,draw_id,chit_participant_id,eligibility_status,participant_sequence,interest_status,created_at,updated_at)
+          VALUES(gen_random_uuid(),:drawId,:pid,'ELIGIBLE',:seq,'NO_RESPONSE',NOW(),NOW())
+        `,{replacements:{drawId:draw.id,pid:p.id,seq:p.participant_sequence},transaction});
+      }
+
+      await this.sequelize.query(`
+        UPDATE chit_months
+        SET draw_interest_opens_at=:opens,
+            draw_interest_closes_at=:closes,
+            draw_at=:drawAt,
+            status='READY_FOR_ACTION',
+            updated_at=NOW()
+        WHERE id=:monthId
+      `,{replacements:{monthId:dto.chitMonthId,opens,closes,drawAt:drawAt||closes||opens},transaction});
+
+      return {
+        success:true,
+        draw,
+        status:'INTEREST_OPEN',
+        eligibleCount:eligible.length,
+        interestOpensAt:opens,
+        interestClosesAt:closes,
+        drawAt:drawAt||closes||opens,
+        message:'Members may express interest. No winner is selected until the agent runs the draw.'
+      };
     });
+  }
+
+  async setInterest(chitId:string, monthId:string, actorUserId:string, interested:boolean){
+    return this.sequelize.transaction(async transaction=>{
+      const [rows]:any=await this.sequelize.query(`
+        SELECT dp.id,dp.interest_status,dp.interest_at,d.id AS draw_id,
+               m.draw_interest_opens_at,m.draw_interest_closes_at,m.status,
+               cp.user_id,cp.status AS participant_status
+        FROM draw_participants dp
+        JOIN draws d ON d.id=dp.draw_id
+        JOIN chit_months m ON m.id=d.chit_month_id
+        JOIN chit_participants cp ON cp.id=dp.chit_participant_id
+        WHERE d.chit_id=:chitId AND d.chit_month_id=:monthId
+          AND cp.user_id=:user
+        FOR UPDATE OF dp
+      `,{replacements:{chitId,monthId,user:actorUserId},transaction});
+
+      if(!rows.length) throw new ConflictException('Participant is not eligible for this draw or does not belong to authenticated user');
+
+      const r=rows[0];
+      if(r.participant_status!=='ACTIVE') throw new ConflictException('Participant is not active');
+      if(r.status==='COMPLETED') throw new ConflictException('Draw is already completed');
+
+      const now=new Date();
+      if(r.draw_interest_opens_at && now<new Date(r.draw_interest_opens_at))
+        throw new ConflictException('Draw interest window has not opened');
+      if(r.draw_interest_closes_at && now>new Date(r.draw_interest_closes_at))
+        throw new ConflictException('Draw interest window has closed');
+
+      await this.sequelize.query(`
+        UPDATE draw_participants
+        SET interest_status=:status,interest_at=NOW(),updated_at=NOW()
+        WHERE id=:id
+      `,{replacements:{id:r.id,status:interested?'INTERESTED':'NOT_INTERESTED'},transaction});
+
+      return {success:true,drawId:r.draw_id,monthId,interestStatus:interested?'INTERESTED':'NOT_INTERESTED'};
+    });
+  }
+
+  async getDraw(chitId:string, monthId:string, actorUserId:string){
+    const [rows]:any=await this.sequelize.query(`
+      SELECT d.*,m.month_number,m.scheduled_amount,m.winner_payout_amount,
+             m.draw_interest_opens_at,m.draw_interest_closes_at,m.draw_at
+      FROM draws d
+      JOIN chit_months m ON m.id=d.chit_month_id
+      JOIN chits c ON c.id=d.chit_id
+      WHERE d.chit_id=:chitId AND d.chit_month_id=:monthId
+        AND (c.creator_id=:user OR EXISTS(
+          SELECT 1 FROM chit_participants cp WHERE cp.chit_id=c.id AND cp.user_id=:user
+        ))
+    `,{replacements:{chitId,monthId,user:actorUserId}});
+
+    if(!rows.length) throw new NotFoundException('Draw not found');
+
+    const draw=rows[0];
+    const [participants]:any=await this.sequelize.query(`
+      SELECT dp.id,dp.chit_participant_id,dp.participant_sequence,
+             dp.eligibility_status,dp.exclusion_reason,dp.interest_status,dp.interest_at
+      FROM draw_participants dp
+      WHERE dp.draw_id=:drawId
+      ORDER BY dp.participant_sequence
+    `,{replacements:{drawId:draw.id}});
+
+    const [winner]:any=await this.sequelize.query(
+      `SELECT * FROM draw_winners WHERE draw_id=:drawId`,
+      {replacements:{drawId:draw.id}}
+    );
+
+    return {success:true,data:{...draw,participants,winner:winner[0]||null}};
+  }
+
+  async runDraw(chitId:string, monthId:string, actorUserId:string){
+    return this.sequelize.transaction(async transaction=>{
+      const m=await this.loadMonth(chitId,monthId,transaction);
+
+      if(m.creator_id!==actorUserId) throw new ConflictException('Only creator can run the draw');
+      if(m.chit_type!=='FIXED_DRAW') throw new BadRequestException('This endpoint is only for FIXED_DRAW chits');
+      if(m.month_type==='AGENT_CHIT') throw new BadRequestException('AGENT_CHIT month has no draw; use the agent payout endpoint');
+      if(!['READY_FOR_ACTION','SCHEDULED','COLLECTION'].includes(m.status))
+        throw new ConflictException('Month is not ready for draw');
+
+      const [drawRows]:any=await this.sequelize.query(
+        `SELECT * FROM draws WHERE chit_month_id=:monthId FOR UPDATE`,
+        {replacements:{monthId},transaction}
+      );
+      if(!drawRows.length) throw new ConflictException('Open the fixed draw before running it');
+
+      const draw=drawRows[0];
+      if(draw.status==='COMPLETED') throw new ConflictException('Draw is already completed');
+
+      const now=new Date();
+      if(draw.scheduled_at && now<new Date(draw.scheduled_at))
+        throw new ConflictException('Draw time has not arrived');
+
+      const [eligible]:any=await this.sequelize.query(`
+        SELECT dp.*,cp.user_id
+        FROM draw_participants dp
+        JOIN chit_participants cp ON cp.id=dp.chit_participant_id
+        WHERE dp.draw_id=:drawId AND dp.eligibility_status='ELIGIBLE'
+        ORDER BY dp.participant_sequence
+        FOR UPDATE OF dp
+      `,{replacements:{drawId:draw.id},transaction});
+
+      if(!eligible.length) throw new BadRequestException('No eligible participants remain');
+
+      const interested=eligible.filter((p:any)=>p.interest_status==='INTERESTED');
+      const pool=interested.length?interested:eligible;
+
+      // Server-side cryptographic randomness is preferable to client-selected winners.
+      const winnerIndex=Math.floor(Math.random()*pool.length);
+      const winnerId=pool[winnerIndex].chit_participant_id;
+
+      await this.completeDrawPayout({
+        chitId,monthId,actorUserId,m,draw,winnerId,
+        eligibleCount:eligible.length,interestedCount:interested.length,
+        fallbackToAllEligible:interested.length===0,transaction
+      });
+
+      return {
+        success:true,
+        drawId:draw.id,
+        winnerParticipantId:winnerId,
+        eligibleCount:eligible.length,
+        interestedCount:interested.length,
+        fallbackToAllEligible:interested.length===0,
+        rule:'Winner remains active and continues future contributions; previous winners are excluded from later draws.'
+      };
+    });
+  }
+
+  private async completeDrawPayout(args:any){
+    const {
+      chitId,monthId,actorUserId,m,draw,winnerId,
+      eligibleCount,interestedCount,fallbackToAllEligible,transaction
+    }=args;
+
+    const [winner]:any=await this.sequelize.query(`
+      INSERT INTO draw_winners
+      (id,draw_id,chit_participant_id,selected_at,selection_method,result_reference,created_at,updated_at)
+      VALUES(gen_random_uuid(),:drawId,:pid,NOW(),'RANDOM',:ref,NOW(),NOW())
+      RETURNING *
+    `,{replacements:{drawId:draw.id,pid:winnerId,ref:'DRAW-'+draw.id},transaction});
+
+    const winnerPayout=Number(m.winner_payout_amount??m.scheduled_amount);
+    if(!Number.isFinite(winnerPayout)||winnerPayout<=0)
+      throw new BadRequestException('Invalid fixed draw winner payout amount');
+
+    const [collectionRows]:any=await this.sequelize.query(`
+      SELECT COALESCE(SUM(p.amount),0)::numeric AS collected
+      FROM payments p
+      WHERE p.chit_id=:chitId AND p.chit_month_id=:monthId
+        AND p.status IN ('VERIFIED','PAID','SETTLED','COMPLETED')
+    `,{replacements:{chitId,monthId},transaction});
+
+    const collected=Number(collectionRows[0]?.collected??0);
+    const openingSavings=Number(m.accumulated_savings_amount??0);
+    const available=openingSavings+collected;
+
+    if(available<winnerPayout){
+      throw new ConflictException(
+        `Insufficient funds for fixed draw payout. Required ₹${winnerPayout.toFixed(2)}, available ₹${available.toFixed(2)} including previous savings.`
+      );
+    }
+
+    const closingSavings=available-winnerPayout;
+
+    const [payout]:any=await this.sequelize.query(`
+      INSERT INTO payouts
+      (id,chit_id,chit_month_id,recipient_user_id,amount,payment_method,status,recorded_by,notes,created_at,updated_at)
+      SELECT gen_random_uuid(),:chitId,:monthId,cp.user_id,:amount,'UPI','PENDING',:actor,
+             CONCAT('Fixed Draw winner payout; collected=',:collected,', openingSavings=',:openingSavings),
+             NOW(),NOW()
+      FROM chit_participants cp
+      WHERE cp.id=:pid
+      RETURNING *
+    `,{replacements:{
+      chitId,monthId,actor:actorUserId,pid:winnerId,amount:winnerPayout,collected,openingSavings
+    },transaction});
+
+    await this.recordSavings({
+      chitId,monthId,actorUserId,openingSavings,closingSavings,
+      collected,payout:winnerPayout,transaction,typePrefix:'FIXED_DRAW',
+      notes:`Fixed draw: collections ₹${collected.toFixed(2)} + previous savings ₹${openingSavings.toFixed(2)} - payout ₹${winnerPayout.toFixed(2)}`
+    });
+
+    await this.finishMonth({
+      chitId,monthId,actorUserId,drawId:draw.id,transaction,
+      audit:{
+        winnerParticipantId:winnerId,eligibleCount,interestedCount,fallbackToAllEligible,
+        monthlyContributionPerMember:Number(m.scheduled_amount),
+        expectedCollection:Number(m.scheduled_amount)*Number(m.total_members),
+        collectedAmount:collected,openingSavings,winnerPayout,closingSavings
+      }
+    });
+
+    return {winner:winner[0],payout:payout[0],closingSavings};
+  }
+
+  async runAgentChit(chitId:string, monthId:string, actorUserId:string){
+    return this.sequelize.transaction(async transaction=>{
+      const m=await this.loadMonth(chitId,monthId,transaction);
+
+      if(m.creator_id!==actorUserId) throw new ConflictException('Only creator can settle an AGENT_CHIT month');
+      if(m.month_type!=='AGENT_CHIT') throw new BadRequestException('This endpoint is only for AGENT_CHIT months');
+      if(!['READY_TO_START','ACTIVE','RUNNING'].includes(m.chit_status))
+        throw new ConflictException('Chit is not ready');
+      if(!['SCHEDULED','READY_FOR_ACTION','COLLECTION'].includes(m.status))
+        throw new ConflictException('Agent Chit month is not ready for settlement');
+
+      const [existingPayout]:any=await this.sequelize.query(`
+        SELECT id,status FROM payouts
+        WHERE chit_month_id=:monthId AND notes LIKE 'AGENT_CHIT:%'
+        FOR UPDATE
+      `,{replacements:{monthId},transaction});
+
+      if(existingPayout.length) throw new ConflictException('Agent Chit month has already been settled');
+
+      if(!m.agent_id) throw new BadRequestException('AGENT_CHIT month requires an agent');
+
+      const [agentRows]:any=await this.sequelize.query(`
+        SELECT id,user_id,name,upi_id,status
+        FROM agents
+        WHERE id=:agentId
+        FOR UPDATE
+      `,{replacements:{agentId:m.agent_id},transaction});
+
+      if(!agentRows.length) throw new NotFoundException('Configured agent not found');
+      const agent=agentRows[0];
+      if(!agent.user_id) throw new ConflictException('Configured agent has no linked user account');
+      if(agent.status!=='ACTIVE') throw new ConflictException('Configured agent is not active');
+
+      const payoutAmount=Number(m.winner_payout_amount??m.scheduled_amount);
+      if(!Number.isFinite(payoutAmount)||payoutAmount<=0)
+        throw new BadRequestException('Invalid AGENT_CHIT payout amount');
+
+      const [collectionRows]:any=await this.sequelize.query(`
+        SELECT COALESCE(SUM(p.amount),0)::numeric AS collected
+        FROM payments p
+        WHERE p.chit_id=:chitId AND p.chit_month_id=:monthId
+          AND p.status IN ('VERIFIED','PAID','SETTLED','COMPLETED')
+      `,{replacements:{chitId,monthId},transaction});
+
+      const collected=Number(collectionRows[0]?.collected??0);
+      const openingSavings=Number(m.accumulated_savings_amount??0);
+      const available=openingSavings+collected;
+
+      if(available<payoutAmount){
+        throw new ConflictException(
+          `Insufficient funds for Agent Chit payout. Required ₹${payoutAmount.toFixed(2)}, available ₹${available.toFixed(2)} including previous savings.`
+        );
+      }
+
+      const closingSavings=available-payoutAmount;
+
+      const [payout]:any=await this.sequelize.query(`
+        INSERT INTO payouts
+        (id,chit_id,chit_month_id,recipient_user_id,amount,payment_method,status,recorded_by,notes,created_at,updated_at)
+        VALUES(gen_random_uuid(),:chitId,:monthId,:recipient,:amount,
+               'UPI','PENDING',:actor,:notes,NOW(),NOW())
+        RETURNING *
+      `,{replacements:{
+        chitId,monthId,recipient:agent.user_id,amount:payoutAmount,actor:actorUserId,
+        notes:`AGENT_CHIT:${agent.id} Agent ${agent.name}; no draw; all members contribute`
+      },transaction});
+
+      await this.recordSavings({
+        chitId,monthId,actorUserId,openingSavings,closingSavings,
+        collected,payout:payoutAmount,transaction,typePrefix:'AGENT_CHIT',
+        notes:`Agent Chit: all members contribute; agent payout ₹${payoutAmount.toFixed(2)}; collected ₹${collected.toFixed(2)} + previous savings ₹${openingSavings.toFixed(2)}`
+      });
+
+      await this.finishMonth({
+        chitId,monthId,actorUserId,drawId:null,transaction,
+        audit:{
+          monthType:'AGENT_CHIT',
+          agentId:agent.id,agentUserId:agent.user_id,agentName:agent.name,
+          monthlyContributionPerMember:Number(m.scheduled_amount),
+          expectedCollection:Number(m.scheduled_amount)*Number(m.total_members),
+          collectedAmount:collected,openingSavings,
+          agentPayout:payoutAmount,closingSavings,
+          noDraw:true
+        }
+      });
+
+      return {
+        success:true,
+        monthId,
+        monthType:'AGENT_CHIT',
+        drawPerformed:false,
+        agent:{id:agent.id,name:agent.name,userId:agent.user_id,upiId:agent.upi_id},
+        monthlyContributionPerMember:Number(m.scheduled_amount),
+        expectedCollection:Number(m.scheduled_amount)*Number(m.total_members),
+        collectedAmount:collected,
+        openingSavings,
+        agentPayout:payoutAmount,
+        closingSavings,
+        payout:payout[0],
+        message:'No draw was performed. Every active member remains obligated for the monthly contribution.'
+      };
+    });
+  }
+
+  private async recordSavings(args:any){
+    const {
+      chitId,monthId,actorUserId,openingSavings,closingSavings,
+      collected,payout,transaction,typePrefix,notes
+    }=args;
+
+    const delta=closingSavings-openingSavings;
+
+    if(Math.abs(delta)>0.000001){
+      await this.sequelize.query(`
+        INSERT INTO chit_savings_transactions
+        (id,chit_id,chit_month_id,transaction_type,amount,balance_after,agent_user_id,notes,created_at,updated_at)
+        VALUES(gen_random_uuid(),:chitId,:monthId,:type,:delta,:balance,:actor,:notes,NOW(),NOW())
+      `,{replacements:{
+        chitId,monthId,actor:actorUserId,delta,balance:closingSavings,
+        type:delta>=0?`${typePrefix}_SURPLUS`:`${typePrefix}_SAVINGS_USED`,
+        notes
+      },transaction});
+    }
+  }
+
+  private async finishMonth(args:any){
+    const {chitId,monthId,actorUserId,drawId,transaction,audit}=args;
+
+    if(drawId){
+      await this.sequelize.query(`
+        UPDATE draws SET status='COMPLETED',completed_at=NOW(),updated_at=NOW()
+        WHERE id=:drawId
+      `,{replacements:{drawId},transaction});
+    }
+
+    await this.sequelize.query(`
+      UPDATE chit_months
+      SET status='COMPLETED',locked_at=NOW(),locked_by=:actor,updated_at=NOW()
+      WHERE id=:monthId
+    `,{replacements:{monthId,actor:actorUserId},transaction});
+
+    await this.sequelize.query(`
+      UPDATE chits
+      SET completed_months=(
+            SELECT COUNT(*) FROM chit_months WHERE chit_id=:chitId AND status='COMPLETED'
+          ),
+          status=CASE WHEN (
+            SELECT COUNT(*) FROM chit_months WHERE chit_id=:chitId AND status='COMPLETED'
+          ) >= total_months THEN 'COMPLETED' ELSE status END,
+          completed_at=CASE WHEN (
+            SELECT COUNT(*) FROM chit_months WHERE chit_id=:chitId AND status='COMPLETED'
+          ) >= total_months THEN NOW() ELSE completed_at END,
+          updated_at=NOW()
+      WHERE id=:chitId
+    `,{replacements:{chitId},transaction});
+
+    await this.sequelize.query(`
+      INSERT INTO audit_logs
+      (id,actor_user_id,chit_id,action,entity_type,entity_id,after_data,created_at,updated_at)
+      VALUES(gen_random_uuid(),:actor,:chitId,:action,'CHIT_MONTH',:monthId,:data,NOW(),NOW())
+    `,{replacements:{
+      actor:actorUserId,chitId,monthId,
+      action:audit.monthType==='AGENT_CHIT'?'AGENT_CHIT_SETTLED':'FIXED_DRAW_COMPLETED',
+      data:JSON.stringify(audit)
+    },transaction});
+
+    const [savings]:any=await this.sequelize.query(
+      `SELECT accumulated_savings_amount FROM chits WHERE id=:chitId`,
+      {replacements:{chitId},transaction}
+    );
   }
 }
