@@ -57,7 +57,7 @@ class ChitsController {
         LIMIT 1
       `,
       {
-        replacements: { agentId: dto.agentId },
+        replacements: { agent_id: agentId },
         transaction,
       },
     );
