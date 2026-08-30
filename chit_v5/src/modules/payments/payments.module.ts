@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Headers, Module, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Module,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PaymentWorkflowService } from './payment-workflow.service';
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
@@ -16,9 +25,6 @@ class PaymentsController {
   @Get('chits/:chitId/months/:monthId/obligations')
   @ApiOperation({
     summary: 'Get or create contribution obligations for a chit month',
-    description:
-      'Returns the authenticated member obligation, or all active member obligations for the creator. ' +
-      'The operation is idempotent and provisions missing obligations from the month scheduled amount.',
   })
   obligations(
     @Param('chitId') chitId: string,
@@ -26,6 +32,19 @@ class PaymentsController {
     @CurrentUser() user: any,
   ) {
     return this.service.listObligations(chitId, monthId, user.sub);
+  }
+
+  // NEW
+  @Get('chits/:chitId/months/:monthId')
+  @ApiOperation({
+    summary: 'List all contribution payments for a chit month',
+  })
+  payments(
+    @Param('chitId') chitId: string,
+    @Param('monthId') monthId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.service.listPayments(chitId, monthId, user.sub);
   }
 
   @Post('chits/:chitId/participants/:participantId/submit')
@@ -37,7 +56,10 @@ class PaymentsController {
     @Headers('idempotency-key') idempotencyKey: string,
     @CurrentUser() user: any,
   ) {
-    return this.service.submit(chitId, participantId, user.sub, { ...dto, idempotencyKey });
+    return this.service.submit(chitId, participantId, user.sub, {
+      ...dto,
+      idempotencyKey: idempotencyKey ?? dto.idempotencyKey,
+    });
   }
 
   @Post(':paymentId/verify')
@@ -48,6 +70,20 @@ class PaymentsController {
     @CurrentUser() user: any,
   ) {
     return this.service.verify(paymentId, user.sub, dto);
+  }
+
+  // NEW
+  @Post('chits/:chitId/months/:monthId/verify-all')
+  @ApiOperation({
+    summary: 'Verify all submitted payments for a chit month',
+  })
+  verifyAll(
+    @Param('chitId') chitId: string,
+    @Param('monthId') monthId: string,
+    @Body() dto: VerifyPaymentDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.service.verifyAll(chitId, monthId, user.sub, dto);
   }
 }
 
