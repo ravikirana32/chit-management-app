@@ -5,6 +5,32 @@ import { Sequelize } from 'sequelize-typescript';
 export class FixedDrawService {
   constructor(private readonly sequelize:Sequelize){}
 
+  private async canRunFixedDraw(chitId:string, actorUserId:string, transaction:any){
+    const [creator]:any=await this.sequelize.query(
+      `SELECT 1 FROM chits WHERE id=:chitId AND creator_id=:userId LIMIT 1`,
+      {replacements:{chitId,userId:actorUserId},transaction}
+    );
+    if(creator.length) return true;
+    const [agent]:any=await this.sequelize.query(
+      `SELECT 1
+       FROM chit_agent_assignments ca
+       JOIN agents ag ON ag.id=ca.agent_id
+       WHERE ca.chit_id=:chitId
+         AND ag.user_id=:userId
+         AND ca.active=true
+         AND ca.can_run_draw=true
+         AND ag.status='ACTIVE'
+       LIMIT 1`,
+      {replacements:{chitId,userId:actorUserId},transaction}
+    );
+    return !!agent.length;
+  }
+
+  private async assertCanRunFixedDraw(chitId:string, actorUserId:string, transaction:any){
+    if(!(await this.canRunFixedDraw(chitId,actorUserId,transaction)))
+      throw new ConflictException('Fixed draw permission is required for this chit');
+  }
+
   private async loadMonth(chitId:string, monthId:string, transaction:any){
     const [rows]:any=await this.sequelize.query(`
       SELECT m.*, c.creator_id, c.status AS chit_status, c.chit_type,
@@ -30,7 +56,7 @@ export class FixedDrawService {
   async startDraw(chitId:string, dto:any, actorUserId:string){
     return this.sequelize.transaction(async transaction=>{
       const m=await this.loadMonth(chitId,dto.chitMonthId,transaction);
-      if(m.creator_id!==actorUserId) throw new ConflictException('Only creator can open the draw');
+      await this.assertCanRunFixedDraw(chitId,actorUserId,transaction);
       if(m.chit_type!=='FIXED_DRAW') throw new BadRequestException('This endpoint is only for FIXED_DRAW chits');
       if(!['READY_TO_START','ACTIVE','RUNNING'].includes(m.chit_status)) throw new ConflictException('Chit is not ready for draw');
       if(m.month_type==='AGENT_CHIT') throw new BadRequestException('AGENT_CHIT month does not have a draw');
@@ -197,7 +223,7 @@ export class FixedDrawService {
     return this.sequelize.transaction(async transaction=>{
       const m=await this.loadMonth(chitId,monthId,transaction);
 
-      if(m.creator_id!==actorUserId) throw new ConflictException('Only creator can run the draw');
+      await this.assertCanRunFixedDraw(chitId,actorUserId,transaction);
       if(m.chit_type!=='FIXED_DRAW') throw new BadRequestException('This endpoint is only for FIXED_DRAW chits');
       if(m.month_type==='AGENT_CHIT') throw new BadRequestException('AGENT_CHIT month has no draw; use the agent payout endpoint');
       if(!['READY_FOR_ACTION','SCHEDULED','COLLECTION'].includes(m.status))

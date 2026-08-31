@@ -15,8 +15,14 @@ export class AuctionService {
     );
     if (creator.length) return true;
     const [agent]: any = await this.sequelize.query(
-      `SELECT 1 FROM chit_agent_assignments
-       WHERE chit_id=:chitId AND agent_id=:userId AND active=true AND can_run_auction=true
+      `SELECT 1
+       FROM chit_agent_assignments ca
+       JOIN agents ag ON ag.id=ca.agent_id
+       WHERE ca.chit_id=:chitId
+         AND ag.user_id=:userId
+         AND ca.active=true
+         AND ca.can_run_auction=true
+         AND ag.status='ACTIVE'
        LIMIT 1`,
       { replacements: { chitId, userId }, transaction },
     );

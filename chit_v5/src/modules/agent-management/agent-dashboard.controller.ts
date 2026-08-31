@@ -23,7 +23,8 @@ export class AgentDashboardController {
    FROM chit_agent_assignments a
    JOIN chits c ON c.id=a.chit_id
    LEFT JOIN chit_participants cp ON cp.chit_id=c.id
-   WHERE a.agent_id=:u AND a.active=true
+   JOIN agents ag ON ag.id=a.agent_id
+   WHERE ag.user_id=:u AND a.active=true
   `,{replacements:{u:u.sub}});
 
   const [chits]:any=await this.db.query(`
@@ -35,7 +36,8 @@ export class AgentDashboardController {
    FROM chit_agent_assignments a
    JOIN chits c ON c.id=a.chit_id
    LEFT JOIN chit_participants cp ON cp.chit_id=c.id
-   WHERE a.agent_id=:u AND a.active=true
+   JOIN agents ag ON ag.id=a.agent_id
+   WHERE ag.user_id=:u AND a.active=true
    GROUP BY c.id,a.id
    ORDER BY c.created_at DESC
   `,{replacements:{u:u.sub}});

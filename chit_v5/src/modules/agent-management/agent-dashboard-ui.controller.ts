@@ -18,7 +18,8 @@ export class AgentDashboardUiController {
    SELECT c.id,c.name,c.status,a.*
    FROM chit_agent_assignments a
    JOIN chits c ON c.id=a.chit_id
-   WHERE a.agent_id=:u AND a.chit_id=:c AND a.active=true
+   JOIN agents ag ON ag.id=a.agent_id
+   WHERE ag.user_id=:u AND a.chit_id=:c AND a.active=true
   `,{replacements:{u:u.sub,c}});
   if(!r.length)return {success:false,message:'Chit is not assigned to this agent'};
   return {success:true,data:r[0]};
