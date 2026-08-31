@@ -1,25 +1,3 @@
-import {View,Text,Pressable,ScrollView,StyleSheet} from 'react-native';
-import {router} from 'expo-router';
-import {resolveRole} from '@/src/navigation/roles';
-
-const cards=[
- {key:'create',title:'Create Chit',desc:'Create Fixed Draw or Auction chit',route:'/create-chit',creator:true},
- {key:'my-chits',title:'My Chits',desc:'Manage chits and members',route:'/my-chits'},
- {key:'payments',title:'Payments',desc:'Pay, verify and view history',route:'/payments'},
- {key:'auctions',title:'Auctions',desc:'View and place bids',route:'/auctions'},
- {key:'payouts',title:'Payouts',desc:'Track chit winnings and settlements',route:'/payouts'},
- {key:'profile',title:'Profile',desc:'UPI, bank and cash preferences',route:'/profile'}
-];
-
-export default function Dashboard(){
- const role=resolveRole(true,true);
- return <ScrollView contentContainerStyle={styles.container}>
-  <Text style={styles.title}>Chit Dashboard</Text>
-  <Text style={styles.subtitle}>{role==='BOTH'?'Creator + Member':'Member'}</Text>
-  <View style={styles.grid}>{cards.filter(c=>!c.creator||role!=='MEMBER').map(c=>
-   <Pressable key={c.key} accessibilityRole="button" testID={`dashboard-${c.key}`} style={styles.card} onPress={()=>router.push(c.route as any)}>
-    <Text style={styles.cardTitle}>{c.title}</Text><Text style={styles.desc}>{c.desc}</Text>
-   </Pressable>)}</View>
- </ScrollView>
-}
-const styles=StyleSheet.create({container:{padding:20,paddingTop:55},title:{fontSize:30,fontWeight:'800'},subtitle:{marginTop:4,marginBottom:20},grid:{gap:12},card:{padding:18,borderWidth:1,borderColor:'#ddd',borderRadius:16},cardTitle:{fontSize:18,fontWeight:'700'},desc:{marginTop:6}});
+import React,{useCallback,useEffect,useState}from'react';import{FlatList,RefreshControl,Text,Pressable,View}from'react-native';import{router}from'expo-router';import{dashboardApi,chitsApi}from'@/src/api/all';import{useAuth}from'@/src/state/Auth';import{Badge,Button,Card,Loading,Screen,Stat,s}from'@/src/components/UI';import{money}from'@/src/lib/format';
+export default function Dashboard(){const{user,logout}=useAuth();const[data,setData]=useState<any>(null);const[chits,setChits]=useState<any[]>([]);const[refresh,setRefresh]=useState(false);const load=useCallback(async()=>{setRefresh(true);try{const [c]=await Promise.all([chitsApi.list()]);let summary:any={active_chits:c.data?.data?.filter((x:any)=>x.status==='ACTIVE').length??0,live_chits:0,members:0,completed_chits:c.data?.data?.filter((x:any)=>x.status==='COMPLETED').length??0};try{const d=await dashboardApi.agent();summary=d.data?.data?.summary??d.data?.summary??summary}catch{}setData({summary});setChits(c.data?.data??[])}catch(e){}finally{setRefresh(false)}},[]);useEffect(()=>{load()},[load]);if(!data)return <Screen title="Agent Dashboard"><Loading/></Screen>;return <Screen title={`Hello, ${user?.name||'Agent'} 👋`} subtitle="Creator / Agent operations"><FlatList data={chits} keyExtractor={x=>x.id} refreshControl={<RefreshControl refreshing={refresh} onRefresh={load}/>} ListHeaderComponent={<><Text style={s.section}>Overview</Text><Card><ViewStats data={data.summary}/></Card><Button title="Create New Chit" onPress={()=>router.push('/create-chit')}/><Text style={s.section}>My Chits</Text></>} renderItem={({item})=><Pressable onPress={()=>router.push({pathname:'/chit-detail',params:{chitId:item.id}})}><Card><View style={s.row}><Text style={{fontSize:17,fontWeight:'800',flex:1}}>{item.name}</Text><Badge tone={item.status==='ACTIVE'?'green':'neutral'}>{item.status}</Badge></View><Text style={s.muted}>{item.chit_type||item.chitType||'Chit'} · {item.total_members} members · {money(item.total_chit_amount)}</Text></Card></Pressable>} ListEmptyComponent={<Card><Text style={s.muted}>No chits yet.</Text></Card>} ListFooterComponent={<Button title="Logout" secondary onPress={async()=>{await logout();router.replace('/login')}}/>}/></Screen>}
+function ViewStats({data}:any){return <View style={{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between'}}><Stat label="Active Chits" value={data?.active_chits??0}/><Stat label="Live Chits" value={data?.live_chits??0}/><Stat label="Members" value={data?.members??0}/><Stat label="Completed" value={data?.completed_chits??0}/></View>}

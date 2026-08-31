@@ -1,15 +1,2 @@
-import { View,Text,FlatList,Pressable,StyleSheet } from 'react-native';
-import { useEffect,useState } from 'react';
-import { notificationsApi } from '@/src/api/notifications';
-
-export default function Notifications(){
- const [items,setItems]=useState<any[]>([]);
- async function load(){const r=await notificationsApi.list();setItems(r.data?.data??r.data??[])}
- useEffect(()=>{load()},[]);
- async function read(id:string){await notificationsApi.read(id);setItems(items.map(x=>x.id===id?{...x,status:'READ'}:x))}
- return <View style={styles.container}><Text style={styles.title}>Notifications</Text>
-  <FlatList data={items} keyExtractor={x=>String(x.id)} renderItem={({item})=>
-   <Pressable style={styles.card} onPress={()=>read(item.id)}><Text style={styles.cardTitle}>{item.title}</Text><Text>{item.body}</Text><Text>{item.status}</Text></Pressable>}/>
- </View>
-}
-const styles=StyleSheet.create({container:{flex:1,padding:24,paddingTop:60},title:{fontSize:28,fontWeight:'700'},card:{padding:16,borderWidth:1,borderColor:'#ddd',borderRadius:12,marginTop:12},cardTitle:{fontWeight:'700',marginBottom:5}});
+import React,{useEffect,useState}from'react';import{Alert,FlatList,Text}from'react-native';import{router,useLocalSearchParams}from'expo-router';import{notificationsApi}from'@/src/api/all';import{Card,Loading,Screen,s}from'@/src/components/UI';
+export default function Notifications(){const{chitId}=useLocalSearchParams<{chitId:string}>();const[data,setData]=useState<any[]>([]);useEffect(()=>{if(chitId)notificationsApi.list(String(chitId)).then(r=>setData(r.data?.data??[])).catch(e=>Alert.alert('Notifications unavailable',e?.response?.data?.message||'Unable to load'))},[chitId]);return <Screen title="Notifications" back={()=>router.back()}><FlatList data={data} keyExtractor={(x,i)=>String(x.id??i)} renderItem={({item})=><Card><Text style={{fontWeight:'800'}}>{item.title||item.type||'Notification'}</Text><Text style={s.muted}>{item.message||item.body||JSON.stringify(item)}</Text></Card>} ListEmptyComponent={<Loading/>}/></Screen>}

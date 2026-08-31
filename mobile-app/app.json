@@ -1,12 +1,1 @@
-{
-  "expo":{
-    "name":"Chit Funds",
-    "slug":"chit-funds",
-    "version":"0.1.0",
-    "orientation":"portrait",
-    "scheme":"chitfunds",
-    "plugins":["expo-router"],
-    "android":{"package":"com.example.chitfunds"},
-    "ios":{"bundleIdentifier":"com.example.chitfunds"}
-  }
-}
+{"expo":{"name":"Chit Management","slug":"chit-management","version":"1.0.0","orientation":"portrait","scheme":"chitmanagement","userInterfaceStyle":"light","plugins":["expo-router"],"android":{"package":"com.ravikirana.chitmanagement"},"ios":{"bundleIdentifier":"com.ravikirana.chitmanagement"}}}

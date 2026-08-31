@@ -1,2 +1,2 @@
-import {Redirect} from 'expo-router';
-export default function Index(){return <Redirect href="/role-entry"/>;}
+import React from'react';import{Redirect}from'expo-router';import{ActivityIndicator,View}from'react-native';import{useAuth}from'@/src/state/Auth';
+export default function Index(){const{ready,token,user}=useAuth();if(!ready)return <View style={{flex:1,justifyContent:'center',alignItems:'center'}}><ActivityIndicator/></View>;if(!token)return <Redirect href="/login"/>;if(user?.roles?.some(r=>['CREATOR','OWNER','CHIT_CREATOR','AGENT','ADMIN'].includes(r)))return <Redirect href="/dashboard"/>;return <Redirect href="/member-home"/>}

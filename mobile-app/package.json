@@ -1,30 +1,9 @@
 {
-  "name": "chit-funds-mobile",
-  "version": "0.1.0",
-  "private": true,
-  "main": "expo-router/entry",
-  "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "expo": "~53.0.0",
-    "expo-router": "~5.1.0",
-    "react": "19.0.0",
-    "react-native": "0.79.2",
-    "@react-navigation/native": "^7.1.6",
-    "@reduxjs/toolkit": "^2.8.2",
-    "react-redux": "^9.2.0",
-    "axios": "^1.9.0",
-    "socket.io-client": "^4.8.1",
-    "@react-native-async-storage/async-storage": "^2.1.2",
-    "@react-native-community/netinfo": "^11.4.1"
-  },
-  "devDependencies": {
-    "@types/react": "~19.0.10",
-    "typescript": "~5.8.3"
-  }
+  "name":"chit-management-mobile",
+  "version":"1.0.0",
+  "private":true,
+  "main":"expo-router/entry",
+  "scripts":{"start":"expo start","android":"expo start --android","ios":"expo start --ios","web":"expo start --web","typecheck":"tsc --noEmit"},
+  "dependencies":{"expo":"~53.0.0","expo-router":"~5.1.0","react":"19.0.0","react-native":"0.79.2","@react-navigation/native":"^7.1.6","axios":"^1.9.0","@react-native-async-storage/async-storage":"^2.1.2","socket.io-client":"^4.8.1"},
+  "devDependencies":{"@types/react":"~19.0.10","typescript":"~5.8.3"}
 }

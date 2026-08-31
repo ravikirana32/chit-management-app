@@ -1,16 +1,2 @@
-import {View,Text,FlatList,StyleSheet,ActivityIndicator} from 'react-native';
-import {useLocalSearchParams} from 'expo-router';
-import {useEffect,useState} from 'react';
-import {ledgerApi} from '@/src/api/ledger';
-
-export default function Ledger(){
- const {chitId,participantId}=useLocalSearchParams<{chitId:string,participantId:string}>();
- const [rows,setRows]=useState<any[]>([]);const [loading,setLoading]=useState(true);
- useEffect(()=>{if(chitId&&participantId)ledgerApi.participant(String(chitId),String(participantId)).then(r=>setRows(r.data?.data??r.data??[])).finally(()=>setLoading(false))},[chitId,participantId]);
- if(loading)return <View style={styles.center}><ActivityIndicator/></View>;
- return <View style={styles.container}><Text style={styles.title}>My Ledger</Text>
-  <FlatList data={rows} keyExtractor={x=>String(x.id)} renderItem={({item})=>
-   <View style={styles.row}><View><Text style={styles.type}>{item.entry_type}</Text><Text>{item.description}</Text></View><Text>₹{Number(item.amount).toFixed(2)}</Text></View>}/>
- </View>
-}
-const styles=StyleSheet.create({container:{flex:1,padding:24,paddingTop:60},center:{flex:1,justifyContent:'center',alignItems:'center'},title:{fontSize:28,fontWeight:'700',marginBottom:18},row:{padding:14,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',justifyContent:'space-between'},type:{fontWeight:'700'}});
+import React,{useEffect,useState}from'react';import{ScrollView,Text,View}from'react-native';import{router,useLocalSearchParams}from'expo-router';import{ledgerApi,auctionsApi,chitsApi}from'@/src/api/all';import{Card,Loading,Screen,Stat,s}from'@/src/components/UI';import{money,errMsg}from'@/src/lib/format';import{useAuth}from'@/src/state/Auth';
+export default function Ledger(){const{chitId}=useLocalSearchParams<{chitId:string}>();const{user}=useAuth();const[data,setData]=useState<any>();const[savings,setSavings]=useState<any>();useEffect(()=>{(async()=>{try{const c=await chitsApi.get(String(chitId));const d=c.data?.data??c.data;setData(d);if(user?.participantId){const l=await ledgerApi.me(String(chitId),user.participantId);setData((x:any)=>({...x,ledger:l.data?.data??l.data}))}try{const a=await auctionsApi.savings(String(chitId));setSavings(a.data?.data??a.data)}catch{}}catch(e){}})()},[chitId,user?.participantId]);if(!data)return <Screen title="Ledger"><Loading/></Screen>;return <Screen title="Ledger" subtitle={data.name} back={()=>router.back()}><ScrollView><View style={{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between'}}><Stat label="Face amount" value={money(data.total_chit_amount)}/><Stat label="Current savings" value={money(data.currentSavings??data.accumulated_savings_amount)}/><Stat label="Completed" value={`${data.completed_months||0}/${data.total_months}`}/><Stat label="Members" value={data.total_members}/></View>{savings&&<Card><Text style={s.section}>Savings</Text><Text>Accumulated: {money(savings.accumulatedSavingsAmount)}</Text><Text>Additional auction eligible: {savings.additionalAuctionEligible?'YES':'NO'}</Text></Card>}<Card><Text style={s.section}>Monthly schedule</Text>{(data.months||[]).map((m:any)=><View key={m.id} style={[s.row,{paddingVertical:9,borderBottomWidth:1,borderBottomColor:'#eee'}]}><Text>Month {m.month_number}</Text><Text>{m.month_type==='AGENT_CHIT'?'Agent Month':m.status}</Text><Text>{money(m.scheduled_amount)}</Text></View>)}</Card>{data.ledger&&<Card><Text style={s.section}>My ledger</Text><Text>{JSON.stringify(data.ledger,null,2)}</Text></Card>}</ScrollView></Screen>}

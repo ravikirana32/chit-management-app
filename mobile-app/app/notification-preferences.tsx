@@ -1,12 +1,3 @@
-import {View,Text,Switch,Pressable,StyleSheet,Alert} from 'react-native';
-import {useEffect,useState} from 'react';
-import {api} from '@/src/api/client';
-
-const keys=[['paymentReminders','Payment reminders'],['auctionAlerts','Auction alerts'],['winnerAlerts','Winner alerts'],['payoutAlerts','Payout alerts'],['overdueAlerts','Overdue alerts'],['memberUpdates','Member updates'],['pushEnabled','Push notifications']] as const;
-export default function NotificationPreferences(){
- const [v,setV]=useState<any>({});
- useEffect(()=>{api.get('/v1/notifications/preferences').then(r=>setV(r.data?.data??{})).catch(()=>{})},[]);
- const save=async()=>{try{await api.put('/v1/notifications/preferences',v);Alert.alert('Saved','Notification preferences updated')}catch{Alert.alert('Error','Unable to save preferences')}};
- return <View style={styles.container}><Text style={styles.title}>Notifications</Text>{keys.map(([k,label])=><View key={k} style={styles.row}><Text>{label}</Text><Switch value={!!v[k]} onValueChange={x=>setV({...v,[k]:x})}/></View>)}<Pressable style={styles.button} onPress={save}><Text>Save</Text></Pressable></View>
-}
-const styles=StyleSheet.create({container:{padding:22,paddingTop:55},title:{fontSize:28,fontWeight:'800',marginBottom:18},row:{flexDirection:'row',justifyContent:'space-between',paddingVertical:14,borderBottomWidth:1,borderBottomColor:'#eee'},button:{marginTop:22,padding:15,borderWidth:1,borderRadius:10,alignItems:'center'}});
+import React,{useEffect,useState}from'react';import{Alert,ScrollView,Text}from'react-native';import{router}from'expo-router';import{notificationsApi}from'@/src/api/all';import{Button,Card,Screen,s}from'@/src/components/UI';
+const fields=[['paymentReminders','Payment reminders'],['auctionAlerts','Auction alerts'],['winnerAlerts','Winner alerts'],['payoutAlerts','Payout alerts'],['overdueAlerts','Overdue alerts'],['memberUpdates','Member updates'],['pushEnabled','Push notifications']] as const;
+export default function NotificationPreferences(){const[data,setData]=useState<any>({});useEffect(()=>{notificationsApi.preferences().then(r=>setData(r.data?.data??r.data??{})).catch(()=>{})},[]);return <Screen title="Notification Preferences" back={()=>router.back()}><ScrollView>{fields.map(([k,l])=><Card key={k}><Button title={`${data[k]===false?'Enable':'Disable'} ${l}`} secondary onPress={()=>setData((x:any)=>({...x,[k]:x[k]===false}))}/><Text style={s.muted}>{l}: {data[k]===false?'Off':'On'}</Text></Card>)}<Button title="Save Preferences" onPress={async()=>{try{await notificationsApi.savePreferences(data);Alert.alert('Saved','Preferences updated.')}catch(e:any){Alert.alert('Failed',e?.response?.data?.message||'Unable to save')}}}/></ScrollView></Screen>}

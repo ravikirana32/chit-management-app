@@ -1,24 +1,28 @@
-# Chit Funds Mobile — v15
+# Chit Management Mobile vNext
 
-Expo + React Native foundation.
+React Native / Expo Router client aligned to the current `chit_v5` API.
 
 ## Run
-1. Copy `.env.example` to `.env`.
-2. Set `EXPO_PUBLIC_API_URL`.
-3. Install dependencies with npm install.
-4. Run `npm start`.
 
-## Screens included
+1. `npm install`
+2. Copy `.env.example` to `.env` and set `EXPO_PUBLIC_API_URL`.
+3. `npm start`
+4. `npm run typecheck`
+
+The app uses the authenticated `/v1/users/me` response to determine role. Financial mutations are blocked offline and use an idempotency key where supported.
+
+## Main flows
+
 - Login / OTP
-- Home
-- Create Chit
-- Chit type selection
-- Chit setup
-- Member invite/list
-- Review/publish
-- Chit dashboard
-- Payment
-- Live auction foundation
-
-## Important
-This is the first mobile integration increment. API calls for creation/payment/bidding should be wired to the finalized backend contracts in the next increments. The UI intentionally does not invent financial results.
+- Creator/Agent dashboard
+- Member dashboard
+- Create chit + variable monthly contribution/payout schedule
+- Agent-chit months
+- Invitations and acceptance
+- Fixed draw: open interest → express interest → run draw → payout → month close
+- Auction: open → live state → bid → finalize → payout → month close
+- Contributions: obligations → payment submit → creator verification → verification-all
+- Cash recording
+- Payout settlement with CASH/UPI/BANK_TRANSFER
+- Savings, operations summary and ledger
+- Notifications and payment profile

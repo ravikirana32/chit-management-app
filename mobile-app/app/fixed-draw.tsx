@@ -1,27 +1,2 @@
-import { View,Text,Pressable,StyleSheet,Alert,ActivityIndicator } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
-import { useEffect,useState } from 'react';
-import { drawsApi } from '@/src/api/draws';
-
-export default function FixedDraw(){
- const {chitId,monthId}=useLocalSearchParams<{chitId:string,monthId:string}>();
- const [data,setData]=useState<any>(); const [loading,setLoading]=useState(true); const [executing,setExecuting]=useState(false);
- async function load(){if(!chitId)return; const r=await drawsApi.current(String(chitId));setData(r.data?.data??r.data)}
- useEffect(()=>{load().finally(()=>setLoading(false))},[chitId]);
- async function execute(){
-  if(!chitId||!monthId)return Alert.alert('Missing month','Select the current chit month');
-  setExecuting(true);
-  try{const r=await drawsApi.execute(String(chitId),String(monthId));setData(r.data?.data??r.data);Alert.alert('Draw complete','The selected winner is now recorded.')}
-  catch(e:any){Alert.alert('Draw failed',e?.response?.data?.message??'Unable to execute draw')}
-  finally{setExecuting(false)}
- }
- if(loading)return <View style={styles.center}><ActivityIndicator/></View>;
- return <View style={styles.container}><Text style={styles.title}>Fixed Draw</Text>
-  <Text style={styles.note}>Eligible members only. Previous winners are excluded according to chit rules.</Text>
-  {data?.winner&&<View style={styles.winner}><Text style={styles.winnerTitle}>Winner</Text><Text>{data.winner.name??data.winner.participant_sequence}</Text></View>}
-  <Pressable accessibilityRole="button" testID="fixed-draw-submit" style={styles.button} onPress={execute} disabled={executing}><Text style={styles.buttonText}>{executing?'Selecting…':'Select Winner'}</Text></Pressable>
- </View>
-}
-const styles=StyleSheet.create({container:{flex:1,padding:24,paddingTop:60},center:{flex:1,justifyContent:'center',alignItems:'center'},title:{fontSize:28,fontWeight:'700'},
-note:{marginVertical:18,padding:14,backgroundColor:'#f3f4f6',borderRadius:10},winner:{padding:20,borderWidth:1,borderRadius:14},winnerTitle:{fontSize:18,fontWeight:'700',marginBottom:8},
-button:{marginTop:24,padding:15,borderRadius:10,alignItems:'center',backgroundColor:'#111827'},buttonText:{color:'white',fontWeight:'700'}});
+import React,{useCallback,useEffect,useState}from'react';import{Alert,ScrollView,Text,View}from'react-native';import{router,useLocalSearchParams}from'expo-router';import{drawsApi,payoutsApi}from'@/src/api/all';import{Badge,Button,Card,Loading,Screen,s}from'@/src/components/UI';import{date,errMsg,money}from'@/src/lib/format';import{useAuth}from'@/src/state/Auth';
+export default function FixedDraw(){const{chitId,monthId}=useLocalSearchParams<{chitId:string;monthId:string}>();const{user}=useAuth();const[data,setData]=useState<any>();const[busy,setBusy]=useState(false);const load=useCallback(async()=>{if(!chitId||!monthId)return;try{const r=await drawsApi.get(String(chitId),String(monthId));setData(r.data?.data??r.data)}catch(e){setData(null)}},[chitId,monthId]);useEffect(()=>{load()},[load]);if(!data)return <Screen title="Fixed Draw" back={()=>router.back()}><Button title="Open / Start Interest" onPress={async()=>{setBusy(true);try{const r=await drawsApi.start(String(chitId),{chitMonthId:String(monthId)});setData(r.data?.data??r.data);Alert.alert('Interest opened','Members can now express interest.')}catch(e){Alert.alert('Unable to open',errMsg(e))}finally{setBusy(false)}}} disabled={busy}/><Loading/></Screen>;const participants=data.participants||[];const winner=data.winner;return <Screen title={`Month ${data.month_number||'Draw'}`} subtitle="Fixed Draw" back={()=>router.back()}><ScrollView><Card><View style={s.row}><Badge tone="purple">FIXED DRAW</Badge><Text>{date(data.scheduled_date)}</Text></View><Text style={s.section}>Payout</Text><Text style={{fontSize:24,fontWeight:'800'}}>{money(data.winner_payout_amount)}</Text><Text style={s.muted}>Interest is optional. If nobody is interested, the backend falls back to all eligible members.</Text></Card><Text style={s.section}>Interest</Text>{participants.map((p:any)=><Card key={p.id}><View style={s.row}><Text>Member {p.participant_sequence}</Text><Badge tone={p.interest_status==='INTERESTED'?'green':'neutral'}>{p.interest_status}</Badge></View></Card>)}{!winner&&<><Button title="I Am Interested" onPress={async()=>{try{await drawsApi.interest(String(chitId),String(monthId),true);load()}catch(e){Alert.alert('Interest failed',errMsg(e))}}}/><Button title="I Am Not Interested" secondary onPress={async()=>{try{await drawsApi.interest(String(chitId),String(monthId),false);load()}catch(e){Alert.alert('Interest failed',errMsg(e))}}}/><Button title="Run Draw (Agent)" onPress={async()=>{setBusy(true);try{const r=await drawsApi.run(String(chitId),String(monthId));Alert.alert('Draw complete',`Winner participant: ${r.data?.winnerParticipantId??r.data?.data?.winnerParticipantId}`);load()}catch(e){Alert.alert('Draw failed',errMsg(e))}finally{setBusy(false)}}} disabled={busy}/></>}{winner&&<Card><Badge tone="green">WINNER SELECTED</Badge><Text style={s.section}>Participant {winner.chit_participant_id||winner.chitParticipantId}</Text><Text style={s.muted}>Payout is created separately and must be settled after funds are verified.</Text><Button title="View Payouts" secondary onPress={()=>router.push({pathname:'/payouts',params:{chitId}})}/></Card>}</ScrollView></Screen>}

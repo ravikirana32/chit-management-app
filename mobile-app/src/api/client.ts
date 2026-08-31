@@ -1,19 +1,4 @@
 import axios from 'axios';
-import {createRequestId} from './observability';
-
-export const api=axios.create({
-  baseURL:process.env.EXPO_PUBLIC_API_URL,
-  timeout:15000
-});
-
-api.interceptors.request.use(config=>{
-  config.headers=config.headers??{};
-  config.headers['X-Request-Id']=createRequestId();
-  config.headers['X-Client-Version']='0.1.0';
-  return config;
-});
-
-export function setAccessToken(token:string){
-  if(token) api.defaults.headers.common.Authorization=`Bearer ${token}`;
-  else delete api.defaults.headers.common.Authorization;
-}
+export const api=axios.create({baseURL:process.env.EXPO_PUBLIC_API_URL||'https://chit-management-app.onrender.com',timeout:20000,headers:{Accept:'application/json','Content-Type':'application/json'}});
+export function setAccessToken(token:string){if(token)api.defaults.headers.common.Authorization=`Bearer ${token}`;else delete api.defaults.headers.common.Authorization;}
+api.interceptors.request.use(c=>{c.headers=c.headers??{};c.headers['X-Request-Id']=`mobile-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;c.headers['X-Client-Version']='1.0.0';return c});
