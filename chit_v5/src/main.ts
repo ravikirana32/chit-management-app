@@ -111,7 +111,7 @@ async function bootstrap() {
 
   app.enableVersioning({
     type: 0,
-    defaultVersion: process.env.API_VERSION ?? 'v1',
+    defaultVersion: process.env.API_VERSION ?? '1',
   });
 
   app.use((req: any, res: any, next: any) => {
