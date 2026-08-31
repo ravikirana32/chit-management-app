@@ -31,7 +31,7 @@ function normalizeMobile(value: string): string {
 }
 
 @ApiTags('Authentication')
-@Controller({ path: 'auth', version: 'v1' })
+@Controller({ path: 'auth', version: '1' })
 class AuthController {
   constructor(
     private readonly jwt: JwtService,

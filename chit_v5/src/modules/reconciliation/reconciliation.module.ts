@@ -4,7 +4,7 @@ import {JwtAuthGuard} from '../auth/jwt-auth.guard';
 import {CurrentUser} from '../auth/current-user.decorator';
 import {ReconciliationService} from './reconciliation.service';
 @ApiTags('Reconciliation') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'reconciliation',version:'v1'})
+@Controller({path:'reconciliation',version:'1'})
 class ReconciliationController{
  constructor(private readonly service:ReconciliationService){}
  @Get('chits/:chitId') summary(@Param('chitId')id:string,@CurrentUser()u:any){return this.service.chitSummary(id,u.sub)}

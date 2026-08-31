@@ -17,7 +17,7 @@ class AssignmentDto {
 }
 
 @ApiTags('Agent Management') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'chits',version:'v1'})
+@Controller({path:'chits',version:'1'})
 export class AgentManagementController {
  constructor(private readonly db:Sequelize){}
  async isCreator(chitId:string,userId:string){

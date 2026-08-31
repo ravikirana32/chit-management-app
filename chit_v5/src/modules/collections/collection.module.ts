@@ -9,7 +9,7 @@ import { CollectionScheduler } from './collection.scheduler';
 @ApiTags('Collections')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard)
-@Controller({path:'collections',version:'v1'})
+@Controller({path:'collections',version:'1'})
 class CollectionsController {
   constructor(private readonly sequelize:Sequelize){}
 

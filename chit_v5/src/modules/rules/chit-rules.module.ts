@@ -13,7 +13,7 @@ class UpdateRulesDto {
 @ApiTags('Chit Rules')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard)
-@Controller({path:'chit-rules',version:'v1'})
+@Controller({path:'chit-rules',version:'1'})
 class ChitRulesController {
   constructor(private readonly service:ChitRulesService){}
   @Put('chits/:chitId')

@@ -5,7 +5,7 @@ import {JwtAuthGuard} from '../auth/jwt-auth.guard';
 import {CurrentUser} from '../auth/current-user.decorator';
 
 @ApiTags('Operations') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'operations',version:'v1'})
+@Controller({path:'operations',version:'1'})
 class OperationsController{
  constructor(private readonly db:Sequelize){}
  @Get('chits/:chitId/summary')

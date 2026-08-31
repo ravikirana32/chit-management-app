@@ -14,7 +14,7 @@ class PushTokenDto{
  @ApiProperty() @IsString() @MaxLength(500) token!:string;
 }
 @ApiTags('v49 Hardening') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'chits/:chitId/chat',version:'v1'})
+@Controller({path:'chits/:chitId/chat',version:'1'})
 export class ChitChatHardeningController{
  constructor(private readonly db:Sequelize){}
  async canAccess(c:string,u:any){const [r]:any=await this.db.query(`SELECT 1 FROM chits x WHERE x.id=:c AND (x.creator_id=:u OR EXISTS(SELECT 1 FROM chit_participants p WHERE p.chit_id=x.id AND p.user_id=:u))`,{replacements:{c,u:u.sub}});return !!r.length}

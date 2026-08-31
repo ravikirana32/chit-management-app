@@ -14,7 +14,7 @@ class PaymentProfileDto{
  @ApiProperty({required:false}) @IsOptional() @IsBoolean() cashAccepted?:boolean;
 }
 @ApiTags('Users') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'users',version:'v1'})
+@Controller({path:'users',version:'1'})
 class UsersController{
  constructor(private readonly db:Sequelize){}
  @Get('me')

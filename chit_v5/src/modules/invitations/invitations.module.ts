@@ -16,7 +16,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 @ApiTags('Invitations')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard)
-@Controller({ path: 'invitations', version: 'v1' })
+@Controller({ path: 'invitations', version: '1' })
 class InvitationsController {
   constructor(private readonly db: Sequelize) {}
 

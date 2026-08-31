@@ -15,7 +15,7 @@ class DisputeDto{
  @ApiProperty() @IsString() @MaxLength(2000) reason!:string;
 }
 @ApiTags('Payment Proof') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'payments',version:'v1'})
+@Controller({path:'payments',version:'1'})
 export class PaymentProofController{
  constructor(private readonly db:Sequelize){}
  @Post(':paymentId/proof') @ApiOperation({summary:'Attach payment proof metadata; file bytes should be stored in private object storage'})

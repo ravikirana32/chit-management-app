@@ -6,7 +6,7 @@ import {JwtAuthGuard} from '../auth/jwt-auth.guard';
 import {CurrentUser} from '../auth/current-user.decorator';
 class InviteDto{@IsString() @Length(10,20) mobile!:string}
 @ApiTags('Participants') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'chits/:chitId/participants',version:'v1'})
+@Controller({path:'chits/:chitId/participants',version:'1'})
 class ParticipantsController{
  constructor(private readonly db:Sequelize){}
  @Get() async list(@Param('chitId')chitId:string,@CurrentUser()user:any){

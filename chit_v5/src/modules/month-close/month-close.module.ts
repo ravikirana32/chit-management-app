@@ -7,7 +7,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 @ApiTags('Month Close')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard)
-@Controller({path:'month-close',version:'v1'})
+@Controller({path:'month-close',version:'1'})
 class MonthCloseController {
   constructor(private readonly service:MonthCloseService){}
   @Post('months/:monthId')

@@ -8,7 +8,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 @ApiTags('Recovery')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard)
-@Controller({path:'recovery',version:'v1'})
+@Controller({path:'recovery',version:'1'})
 class RecoveryController {
   constructor(private readonly service:RecoveryService){}
   @Post('chits/:chitId/plans')

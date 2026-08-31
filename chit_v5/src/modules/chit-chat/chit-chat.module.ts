@@ -16,7 +16,7 @@ class SettingsDto{
  @ApiProperty({required:false}) @IsOptional() @IsBoolean() attachmentsEnabled?:boolean;
 }
 @ApiTags('Chit Chat') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'chits/:chitId/chat',version:'v1'})
+@Controller({path:'chits/:chitId/chat',version:'1'})
 export class ChitChatController{
  constructor(private readonly db:Sequelize){}
  async role(u:any){const [r]:any=await this.db.query(`SELECT role FROM users WHERE id=:u`,{replacements:{u:u.sub}});return r[0]?.role}

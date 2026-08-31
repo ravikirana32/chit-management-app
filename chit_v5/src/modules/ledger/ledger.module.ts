@@ -8,7 +8,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 @ApiTags('Ledger')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard)
-@Controller({path:'ledger',version:'v1'})
+@Controller({path:'ledger',version:'1'})
 class LedgerController {
   constructor(private readonly service:LedgerService){}
 

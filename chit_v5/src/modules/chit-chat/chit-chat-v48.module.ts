@@ -9,7 +9,7 @@ class ReportDto{
  @ApiProperty() @IsString() @MaxLength(1000) reason!:string;
 }
 @ApiTags('Chit Chat v48') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'chits/:chitId/chat',version:'v1'})
+@Controller({path:'chits/:chitId/chat',version:'1'})
 export class ChitChatV48Controller{
  constructor(private readonly db:Sequelize){}
  @Post('messages/:messageId/report') @ApiOperation({summary:'Report a chit chat message'})

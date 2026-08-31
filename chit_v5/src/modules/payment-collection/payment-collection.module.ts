@@ -12,7 +12,7 @@ class CollectionDto{
  @ApiProperty({required:false}) @IsOptional() @IsString() cashReceiptNote?:string;
 }
 @ApiTags('Payment Collection') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'payment-collection',version:'v1'})
+@Controller({path:'payment-collection',version:'1'})
 export class PaymentCollectionController{
  constructor(private readonly db:Sequelize){}
  @Post('obligations/:obligationId/pay') @ApiOperation({summary:'Member submits own UPI/cash payment'})

@@ -10,7 +10,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 @ApiTags('Draws')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard)
-@Controller({ path: 'draws', version: 'v1' })
+@Controller({ path: 'draws', version: '1' })
 class DrawsController {
   constructor(private readonly service: FixedDrawService) {}
 

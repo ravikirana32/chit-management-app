@@ -38,7 +38,7 @@ class ImportDto{
 }
 
 @ApiTags('Existing Chit Import') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'chit-import',version:'v1'})
+@Controller({path:'chit-import',version:'1'})
 export class ChitImportController{
  constructor(private readonly db:Sequelize){}
  @Post('validate') @ApiOperation({summary:'Validate historical chit data before import'})

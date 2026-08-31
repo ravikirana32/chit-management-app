@@ -18,7 +18,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 @ApiTags('Payments')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard)
-@Controller({ path: 'payments', version: 'v1' })
+@Controller({ path: 'payments', version: '1' })
 class PaymentsController {
   constructor(private readonly service: PaymentWorkflowService) {}
 

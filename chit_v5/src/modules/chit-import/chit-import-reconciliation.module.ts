@@ -12,7 +12,7 @@ class ResolveDto{
  @ApiProperty({required:false}) @IsOptional() @IsString() note?:string;
 }
 @ApiTags('Chit Import Reconciliation') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'chit-import',version:'v1'})
+@Controller({path:'chit-import',version:'1'})
 export class ChitImportReconciliationController{
  constructor(private readonly db:Sequelize){}
  @Post('batches/:batchId/reconcile') @ApiOperation({summary:'Build historical expected-vs-imported reconciliation'})

@@ -13,7 +13,7 @@ class RecordCommissionDto {
 @ApiTags('Agent Commission')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard)
-@Controller({path:'agent-commission',version:'v1'})
+@Controller({path:'agent-commission',version:'1'})
 class AgentCommissionController {
   constructor(private readonly service:AgentCommissionService){}
   @Post('chits/:chitId/months/:monthId')

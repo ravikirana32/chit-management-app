@@ -9,7 +9,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 @ApiTags('Payouts')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard)
-@Controller({ path: 'payouts', version: 'v1' })
+@Controller({ path: 'payouts', version: '1' })
 class PayoutController {
   constructor(private readonly service: PayoutService) {}
 

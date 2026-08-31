@@ -8,7 +8,7 @@ import { Sequelize } from 'sequelize-typescript';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 
 @ApiTags('Chits') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'chits',version:'v1'})
+@Controller({path:'chits',version:'1'})
 class ChitsController {
  constructor(private readonly db:Sequelize){}
 

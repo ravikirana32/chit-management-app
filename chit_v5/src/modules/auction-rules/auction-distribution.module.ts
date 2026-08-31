@@ -12,7 +12,7 @@ class DistributionDto {
 @ApiTags('Auction Rules')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard)
-@Controller({path:'auction-rules',version:'v1'})
+@Controller({path:'auction-rules',version:'1'})
 class AuctionDistributionController {
   constructor(private readonly service:AuctionDistributionService){}
   @Put('chits/:chitId/discount-distribution')

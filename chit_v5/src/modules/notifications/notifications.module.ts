@@ -18,7 +18,7 @@ class NotificationPreferenceDto{
 }
 
 @ApiTags('Notifications') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'notifications',version:'v1'})
+@Controller({path:'notifications',version:'1'})
 class NotificationsController{
  constructor(private readonly db:Sequelize){}
  @Get('preferences')

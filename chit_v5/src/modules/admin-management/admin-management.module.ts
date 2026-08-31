@@ -113,7 +113,7 @@ class UpdateAgentDto {
 @ApiTags('Admin - Users & Roles')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, AdminRoleGuard)
-@Controller({ path: 'admin', version: 'v1' })
+@Controller({ path: 'admin', version: '1' })
 export class AdminManagementController {
   constructor(private readonly db: Sequelize) {}
 

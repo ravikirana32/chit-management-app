@@ -13,7 +13,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @ApiTags('Auctions') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
-@Controller({path:'auctions',version:'v1'})
+@Controller({path:'auctions',version:'1'})
 class AuctionsController {
  constructor(private readonly service:AuctionService,private readonly auctionState:AuctionStateService){}
  @Post('chits/:chitId/open') @ApiOperation({summary:'Open a scheduled monthly auction on its scheduled date'})

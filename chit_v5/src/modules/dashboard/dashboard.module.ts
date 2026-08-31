@@ -7,7 +7,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 @ApiTags('Dashboard')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard)
-@Controller({path:'dashboard',version:'v1'})
+@Controller({path:'dashboard',version:'1'})
 class DashboardController {
   constructor(private readonly service:DashboardService){}
   @Get('me')

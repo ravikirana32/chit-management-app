@@ -7,7 +7,7 @@ import {CurrentUser} from '../auth/current-user.decorator';
 @ApiTags('Agent Dashboard')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard)
-@Controller({path:'agents/me/dashboard',version:'v1'})
+@Controller({path:'agents/me/dashboard',version:'1'})
 export class AgentDashboardController {
  constructor(private readonly db:Sequelize){}
 
