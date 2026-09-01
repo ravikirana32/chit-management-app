@@ -1,0 +1,11 @@
+{
+  "version": "V58",
+  "baseline_commit": "3987f7171b6e881ffcfb27220c1d6372f078a9e9",
+  "files": [
+    "chit_v5/src/common/enterprise-hardening/operation-schedule-policy.service.ts",
+    "chit_v5/src/modules/operations/operations.module.ts",
+    "chit_v5/.env.schedule-policy.example",
+    "V58_SCHEDULE_POLICY_STATUS.md"
+  ],
+  "note": "Safe source-level package; no main branch changes."
+}

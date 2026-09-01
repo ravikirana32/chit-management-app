@@ -4,11 +4,10 @@ import{Controller,Get,Param,Module,UseGuards}from'@nestjs/common';import{ApiBear
 @Controller({path:'operations',version:'1'})
 class OperationsController{
  constructor(private readonly db:Sequelize,private readonly schedulePolicy:OperationSchedulePolicyService){}
- @Get('policy')
- @ApiOperation({summary:'Get server-authoritative scheduled-operation policy for mobile UI'})
+ @Get('policy') @ApiOperation({summary:'Get server-authoritative scheduled-operation policy'})
  policy(){return{success:true,data:this.schedulePolicy.policy()};}
  @Get('chits/:chitId/summary')
- @ApiOperation({summary:'Authoritative chit operational summary including current month and allowed actions'})
+ @ApiOperation({summary:'Authoritative chit operational summary including current month and server capabilities'})
  async summary(@Param('chitId')chitId:string,@CurrentUser()u:any){
   const [c]:any=await this.db.query(`SELECT DISTINCT c.* FROM chits c LEFT JOIN chit_participants cp ON cp.chit_id=c.id AND cp.user_id=:u LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:u WHERE c.id=:id AND (c.creator_id=:u OR cp.id IS NOT NULL OR ag.id IS NOT NULL OR EXISTS(SELECT 1 FROM user_roles ur WHERE ur.user_id=:u AND ur.role='ADMIN'))`,{replacements:{id:chitId,u:u.sub}});
   if(!c.length)return{success:false,message:'Not found'};const chit=c[0];
@@ -20,4 +19,4 @@ class OperationsController{
   return{success:true,data:{chit,collection:r[0],months:m,currentMonth:current,currentMonthId:current?.id??null,currentMonthNumber:current?.month_number??null,configurationLocked:['ACTIVE','COMPLETED','LOCKED'].includes(String(chit.status).toUpperCase()),schedulePolicy:this.schedulePolicy.policy(),capabilities:{can_view_members:admin||creator||access.can_view_members===true,can_invite_members:admin||creator||access.can_invite_members===true,can_collect_cash:admin||creator||access.can_collect_cash===true,can_verify_payments:admin||creator||access.can_verify_payments===true,can_run_draw:admin||creator||access.can_run_draw===true,can_run_auction:admin||creator||access.can_run_auction===true,can_manage_chit:admin||creator||access.can_manage_chit===true,can_view_payout:admin||creator||access.can_view_payout===true,can_settle_payout:admin||creator||access.can_settle_payout===true,can_reopen_auction:admin||creator||access.can_reopen_auction===true,can_open_additional_auction:admin||creator||access.can_open_additional_auction===true}}};
  }
 }
-@Module({controllers:[OperationsController]}) export class OperationsModule{}
+@Module({controllers:[OperationsController]})export class OperationsModule{}
