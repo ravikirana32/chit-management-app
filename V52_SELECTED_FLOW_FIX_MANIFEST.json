@@ -1,0 +1,19 @@
+{
+  "scope": "Only the six user-reported UI/flow issues",
+  "base": "ravikirana32/chit-management-app main",
+  "files": [
+    "mobile-app/app/create-chit.tsx",
+    "mobile-app/app/dashboard.tsx",
+    "mobile-app/app/chit-detail.tsx",
+    "mobile-app/app/fixed-draw.tsx",
+    "mobile-app/app/auction.tsx"
+  ],
+  "changes": [
+    "Admin-selected agent is explicitly assigned to the created chit.",
+    "Agent dashboard merges the authoritative chit list so assigned chits appear in My assigned chits.",
+    "Draft chit detail exposes Setup & Publish.",
+    "Fixed Draw interest is hidden until a draw/interest window is actually opened.",
+    "Fixed Draw exposes Open and Run controls in the correct lifecycle.",
+    "Auction exposes Open, Close and Finalize controls; member bidding is hidden until auction is open."
+  ]
+}
