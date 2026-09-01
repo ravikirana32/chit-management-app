@@ -1,0 +1,113 @@
+{
+  "package": "chit-management-enterprise-consolidated-replaceable",
+  "basis": "Previously generated replacement packages in this conversation, with V55 taking precedence on duplicate paths.",
+  "main_untouched": true,
+  "file_count": 21,
+  "files": [
+    {
+      "path": "051-fix-chit-agent-assignment-agent-fk.js",
+      "source": "chit-agent-assignment-fk-fix.zip",
+      "sha256": "21ad7f832ac7646f3f50527ddf054a1db7587b11e42992e9b0dd8254da20870e"
+    },
+    {
+      "path": "README-FK-FIX.txt",
+      "source": "chit-agent-assignment-fk-fix.zip",
+      "sha256": "f59ef4e2933bd76e8d27de9aaf7c6509413da7e9e6fdb5d912054ca9795e975e"
+    },
+    {
+      "path": "README_REPLACEMENT.txt",
+      "source": "chit-lifecycle-complete-replace.zip",
+      "sha256": "01286328ff872d0d3d0f0dbfe85473f7914baff9c2fbb0341f9af59fa2895cb2"
+    },
+    {
+      "path": "V52_SELECTED_FLOW_FIX_MANIFEST.json",
+      "source": "v52-selected-flow-fix-direct-replace.zip",
+      "sha256": "643f0c4f6f0bb7be38d916d3db5e17adcffb90ae4c3a6b527183e43aa60cc278"
+    },
+    {
+      "path": "V55_32_POINT_GAP_CLOSURE.md",
+      "source": "chit_v55_32_point_gap_closure_replaceable.zip",
+      "sha256": "6c02573245e6dbe6874941cb19bb39c2c1d97bcf200e90d9f468260e48cccbc3"
+    },
+    {
+      "path": "V55_REPLACEMENT_MANIFEST.json",
+      "source": "chit_v55_32_point_gap_closure_replaceable.zip",
+      "sha256": "2d29e058bdbd34bf55bed064256dac35940dab2f4c128bdfb8ab8453f52c4fba"
+    },
+    {
+      "path": "chit_v5/migrations/052-enterprise-capabilities-and-contracts.js",
+      "source": "chit_v55_32_point_gap_closure_replaceable.zip",
+      "sha256": "e01b32e60dd834ddff36effa3f3587416f75a2694e99e4f69412f005c65ea4d5"
+    },
+    {
+      "path": "chit_v5/src/modules/chits/chits.module.ts",
+      "source": "chit-lifecycle-complete-replace.zip",
+      "sha256": "8d87ce320d1c082934f731c0354d1d20b00fd90e150bf672add63d8043403ce0"
+    },
+    {
+      "path": "chit_v5/src/modules/operations/operations.module.ts",
+      "source": "chit_v55_32_point_gap_closure_replaceable.zip",
+      "sha256": "33e98693841b87ae03dc8075a750ccd0409d0673f77a4311a44134aadb145830"
+    },
+    {
+      "path": "chit_v5/src/modules/participants/participants.module.ts",
+      "source": "chit_v55_32_point_gap_closure_replaceable.zip",
+      "sha256": "5728eb633a7b7f4a3b266df6f9e4f2a48854146637476e35db1c5add61d9c580"
+    },
+    {
+      "path": "mobile-app/app/auction.tsx",
+      "source": "v52-selected-flow-fix-direct-replace.zip",
+      "sha256": "693498ab669d4644d2edd105556f1365ff965b8966e161477e1ea7394f1068eb"
+    },
+    {
+      "path": "mobile-app/app/chit-detail.tsx",
+      "source": "chit-lifecycle-complete-replace.zip",
+      "sha256": "863c28a6f790fbcd09b49fb19c6c1bf4cc2cb511baf1b5e11f8e0474ab36976a"
+    },
+    {
+      "path": "mobile-app/app/chit-setup.tsx",
+      "source": "chit-lifecycle-complete-replace.zip",
+      "sha256": "2a37586d68984958db56c290d2bf553d3742df019e6e2b2283f5f5fbd0c2ec01"
+    },
+    {
+      "path": "mobile-app/app/collections.tsx",
+      "source": "chit_v55_32_point_gap_closure_replaceable.zip",
+      "sha256": "6f8ac9782d5eff01236e12248fd2f07b6f9f89e95b3d79237a6db73ce194a228"
+    },
+    {
+      "path": "mobile-app/app/create-chit.tsx",
+      "source": "v52-selected-flow-fix-direct-replace.zip",
+      "sha256": "0c687bea139611bf16748ff61bdce8033925c34aef7610603a36956af589e90a"
+    },
+    {
+      "path": "mobile-app/app/dashboard.tsx",
+      "source": "v52-selected-flow-fix-direct-replace.zip",
+      "sha256": "b025c3018d4529069fdee7120ff690b6bcea3c1e9838e0ed1d3675d8aed09c9b"
+    },
+    {
+      "path": "mobile-app/app/fixed-draw.tsx",
+      "source": "v52-selected-flow-fix-direct-replace.zip",
+      "sha256": "8909acd930bb0d75d109f0efca488d1770ed14ddd68fe312543b99b34ab89a35"
+    },
+    {
+      "path": "mobile-app/app/notifications.tsx",
+      "source": "chit_v55_32_point_gap_closure_replaceable.zip",
+      "sha256": "8084143e950eda282ac3bc87102638b3c09fe3bad15252af68e397634271e842"
+    },
+    {
+      "path": "mobile-app/app/payouts.tsx",
+      "source": "chit_v55_32_point_gap_closure_replaceable.zip",
+      "sha256": "fef417f5f69a76a16e315ff24bec020bf7e1e244ba08a0e8737ffb9f6ddf99e7"
+    },
+    {
+      "path": "mobile-app/src/api/all.ts",
+      "source": "chit_v55_32_point_gap_closure_replaceable.zip",
+      "sha256": "e1083e4740b50e308b01d1400e0d3e42ce155f0d992697b93d11ca9cb014dd0a"
+    },
+    {
+      "path": "mobile-app/src/state/roles.ts",
+      "source": "chit_v55_32_point_gap_closure_replaceable.zip",
+      "sha256": "446d194138b4ba788e95099682d0d02a225c1a8a6ecca9e050c332275031b0fa"
+    }
+  ]
+}
