@@ -1,0 +1,15 @@
+{
+  "baseline_commit": "c38f1b96b64dbad1dfc46cc204de4b396da3b9f5",
+  "files": [
+    "mobile-app/src/state/roles.ts",
+    "mobile-app/src/api/all.ts",
+    "mobile-app/app/collections.tsx",
+    "mobile-app/app/payouts.tsx",
+    "mobile-app/app/notifications.tsx",
+    "chit_v5/migrations/052-enterprise-capabilities-and-contracts.js",
+    "chit_v5/src/modules/participants/participants.module.ts",
+    "chit_v5/src/modules/operations/operations.module.ts",
+    "V55_32_POINT_GAP_CLOSURE.md"
+  ],
+  "status": "source-level-gap-closure; runtime validation required"
+}
