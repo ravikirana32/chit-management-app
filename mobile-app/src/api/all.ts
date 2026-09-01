@@ -1,3 +1,4 @@
+export const authApi={requestOtp:(mobile:string)=>api.post('/v1/auth/request-otp',{mobile}),verifyOtp:(mobile:string,otp:string)=>api.post('/v1/auth/verify-otp',{mobile,otp}),refresh:(refreshToken:string)=>api.post('/v1/auth/refresh',{refreshToken}),logout:(refreshToken:string)=>api.post('/v1/auth/logout',{refreshToken})};
 import{api}from'./client';
 export const operationsApi={policy:()=>api.get('/v1/operations/policy'),summary:(id:string)=>api.get(`/v1/operations/chits/${id}/summary`)};
 export const chitsApi={list:()=>api.get('/v1/chits'),get:(id:string)=>api.get(`/v1/chits/${id}`),create:(p:any)=>api.post('/v1/chits',p),saveSchedule:(id:string,p:any)=>api.put(`/v1/chits/${id}/month-schedule`,p),publish:(id:string)=>api.post(`/v1/chits/${id}/publish`),start:(id:string)=>api.post(`/v1/chits/${id}/start`)};
