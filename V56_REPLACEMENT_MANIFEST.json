@@ -1,0 +1,28 @@
+{
+  "baseline": "ravikirana32/chit-management-app main",
+  "purpose": "Enterprise hardening and API/mobile integration gap closure",
+  "do_not_push": true,
+  "files": [
+    "chit_v5/src/app.module.ts",
+    "chit_v5/src/common/enterprise-hardening/enterprise-hardening.module.ts",
+    "chit_v5/src/common/enterprise-hardening/operation-schedule-policy.service.ts",
+    "chit_v5/src/modules/auth/auth.module.ts",
+    "chit_v5/src/modules/draws/fixed-draw.service.ts",
+    "chit_v5/migrations/053-enterprise-auth-hardening.js",
+    "chit_v5/.env.example",
+    "mobile-app/src/api/client.ts",
+    "mobile-app/src/api/all.ts",
+    "mobile-app/src/state/Auth.tsx",
+    "mobile-app/app/login.tsx",
+    "mobile-app/app/auction.tsx",
+    "mobile-app/.env.example",
+    "V56_ENTERPRISE_STATUS.md"
+  ],
+  "verification": {
+    "typescript_transpile_diagnostics": 0,
+    "javascript_syntax_check": "passed",
+    "full_dependency_build": "not run in this environment",
+    "database_e2e": "not run",
+    "device_e2e": "not run"
+  }
+}

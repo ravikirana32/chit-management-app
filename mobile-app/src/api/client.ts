@@ -1,6 +1,10 @@
-import axios from 'axios';
+import axios,{AxiosError,InternalAxiosRequestConfig}from'axios';
+import AsyncStorage from'@react-native-async-storage/async-storage';
 function normalize(value?:string){let b=(value||'https://chit-management-app.onrender.com').trim().replace(/\/+$/,'');if(b.endsWith('/api/v1'))b=b.slice(0,-3);if(!b.endsWith('/api'))b+='/api';return b;}
 export const API_BASE_URL=normalize(process.env.EXPO_PUBLIC_API_URL);
 export const api=axios.create({baseURL:API_BASE_URL,timeout:20000,headers:{Accept:'application/json','Content-Type':'application/json'}});
 export function setAccessToken(token:string){if(token)api.defaults.headers.common.Authorization=`Bearer ${token}`;else delete api.defaults.headers.common.Authorization;}
-api.interceptors.request.use(c=>{c.headers=c.headers??{};c.headers['X-Request-Id']=`mobile-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;c.headers['X-Client-Version']='2.0.0';return c;});
+let refreshPromise:Promise<string|null>|null=null;
+async function refreshAccessToken(){if(refreshPromise)return refreshPromise;refreshPromise=(async()=>{const rt=await AsyncStorage.getItem('refreshToken');if(!rt)return null;try{const r=await axios.post(`${API_BASE_URL}/v1/auth/refresh`,{refreshToken:rt},{timeout:15000});const d=r.data?.data??r.data;if(!d?.accessToken||!d?.refreshToken)throw new Error('Invalid refresh response');await AsyncStorage.multiSet([['accessToken',d.accessToken],['refreshToken',d.refreshToken]]);setAccessToken(d.accessToken);return d.accessToken;}catch{await AsyncStorage.multiRemove(['accessToken','refreshToken']);setAccessToken('');return null;}finally{refreshPromise=null;}})();return refreshPromise;}
+api.interceptors.request.use((c:InternalAxiosRequestConfig)=>{c.headers=c.headers??{};c.headers['X-Request-Id']=`mobile-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;c.headers['X-Client-Version']='2.1.0';return c;});
+api.interceptors.response.use(r=>r,async(error:AxiosError)=>{const cfg:any=error.config;if(error.response?.status!==401||cfg?._retry||String(cfg?.url||'').includes('/auth/refresh'))throw error;cfg._retry=true;const token=await refreshAccessToken();if(!token)throw error;cfg.headers=cfg.headers??{};cfg.headers.Authorization=`Bearer ${token}`;return api.request(cfg);});

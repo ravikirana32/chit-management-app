@@ -25,12 +25,14 @@ import { ChitsModule } from './modules/chits/chits.module';
 import { ParticipantsModule } from './modules/participants/participants.module';
 import { AdminManagementModule } from './modules/admin-management/admin-management.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
+import { EnterpriseHardeningModule } from './common/enterprise-hardening/enterprise-hardening.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     DatabaseModule,
+    EnterpriseHardeningModule,
     HealthModule,
     AuthModule,
     UsersModule,
