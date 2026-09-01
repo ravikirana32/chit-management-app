@@ -1,12 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Sequelize } from 'sequelize-typescript';
-import { ConfigService } from '@nestjs/config';
+import { OperationSchedulePolicyService } from '../../common/enterprise-hardening/operation-schedule-policy.service';
 
 @Injectable()
 export class AuctionStateService {
   constructor(
     private readonly sequelize: Sequelize,
-    private readonly config: ConfigService,
+    private readonly schedulePolicy: OperationSchedulePolicyService,
   ) {}
 
   async getState(auctionId: string) {
@@ -17,7 +17,7 @@ export class AuctionStateService {
     const closeMs=new Date(a.ends_at).getTime();
     const [winnerRows]: any = await this.sequelize.query(`SELECT aw.*,cp.participant_sequence,u.name AS member_name,u.mobile_number AS member_mobile FROM auction_winners aw JOIN chit_participants cp ON cp.id=aw.chit_participant_id JOIN users u ON u.id=cp.user_id WHERE aw.auction_id=:auctionId LIMIT 1`,{replacements:{auctionId}});
     const winner=winnerRows[0]??null;
-    const bypass=this.config.get<string>('ALLOW_SCHEDULED_OPERATION_BYPASS','false').trim().toLowerCase()==='true';
+    const bypass=this.schedulePolicy.isBypassEnabled();
     const now=Date.now();
     const scheduledDate=a.scheduled_date?String(a.scheduled_date).slice(0,10):null;
     const localToday=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());

@@ -1,0 +1,2 @@
+TypeScript/TSX transpile diagnostics: 0 across 23 files checked.
+Note: transpilation is not a full typecheck or runtime/E2E test.

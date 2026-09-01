@@ -3,10 +3,15 @@ import {
 } from '@nestjs/common';
 import { Sequelize } from 'sequelize-typescript';
 import { AuctionGateway } from './auction.gateway';
+import { OperationSchedulePolicyService } from '../../common/enterprise-hardening/operation-schedule-policy.service';
 
 @Injectable()
 export class AuctionService {
-  constructor(private readonly sequelize: Sequelize, private readonly gateway: AuctionGateway) {}
+  constructor(
+    private readonly sequelize: Sequelize,
+    private readonly gateway: AuctionGateway,
+    private readonly schedulePolicy: OperationSchedulePolicyService,
+  ) {}
 
   private async canRunAuction(chitId: string, userId: string, transaction?: any) {
     const [creator]: any = await this.sequelize.query(
@@ -66,9 +71,10 @@ export class AuctionService {
       if (month.month_type === 'AGENT_CHIT') throw new BadRequestException('Agent Chit months cannot be auctioned');
       if (!['READY_TO_START', 'ACTIVE'].includes(month.chit_status)) throw new ConflictException('Chit is not ready for auction');
       if (!['SCHEDULED', 'READY_FOR_ACTION', 'COLLECTION'].includes(month.status)) throw new ConflictException('This month is not available for auction');
-      if (!(await this.localDateMatches(this.sequelize, chitId, month.scheduled_date, transaction))) {
-        throw new ConflictException(`Auction can only be opened on scheduled date ${month.scheduled_date}`);
-      }
+      this.schedulePolicy.assertScheduleAllowed(
+        await this.localDateMatches(this.sequelize, chitId, month.scheduled_date, transaction),
+        `Auction can only be opened on scheduled date ${month.scheduled_date}`,
+      );
 
       const [existing]: any = await this.sequelize.query(
         `SELECT id,status FROM auctions WHERE chit_month_id=:monthId FOR UPDATE`,
@@ -115,9 +121,10 @@ export class AuctionService {
       if (a.status !== 'OPEN') throw new ConflictException('Only an open auction can be closed');
       if (new Date(a.ends_at).getTime() <= Date.now()) throw new ConflictException('Auction time has already expired; it will be auto-closed');
       const localDate = a.scheduled_date || new Date(a.starts_at).toISOString().slice(0,10);
-      if (!(await this.localDateMatches(this.sequelize, a.chit_id, localDate, transaction))) {
-        throw new ConflictException('Auction can only be manually closed on its auction date');
-      }
+      this.schedulePolicy.assertScheduleAllowed(
+        await this.localDateMatches(this.sequelize, a.chit_id, localDate, transaction),
+        'Auction can only be manually closed on its auction date',
+      );
       const [updated]: any = await this.sequelize.query(
         `UPDATE auctions SET status='CLOSED_PENDING_FINALIZATION',updated_at=NOW() WHERE id=:auctionId RETURNING *`,
         { replacements: { auctionId }, transaction },
@@ -146,7 +153,10 @@ export class AuctionService {
       if (a.status === 'COMPLETED') throw new ConflictException('A finalized auction cannot be reopened');
       if (a.status !== 'CLOSED_PENDING_FINALIZATION') throw new ConflictException('Only an early-closed auction can be reopened');
       const date = a.scheduled_date || new Date(a.starts_at).toISOString().slice(0,10);
-      if (!(await this.localDateMatches(this.sequelize, a.chit_id, date, transaction))) throw new ConflictException('Auction can only be reopened on its auction date');
+      this.schedulePolicy.assertScheduleAllowed(
+        await this.localDateMatches(this.sequelize, a.chit_id, date, transaction),
+        'Auction can only be reopened on its auction date',
+      );
       const remainingSeconds = Math.floor((new Date(a.ends_at).getTime() - Date.now()) / 1000);
       if (remainingSeconds <= 0) throw new ConflictException('The original auction window has expired and cannot be reopened');
       const requested = durationMinutes ?? Math.max(1, Math.ceil(remainingSeconds / 60));

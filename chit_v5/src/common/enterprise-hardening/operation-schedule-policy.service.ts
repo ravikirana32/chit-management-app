@@ -1,13 +1,6 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-/**
- * Single server-side schedule policy.
- *
- * The mobile app never owns this flag. It consumes the resulting policy/action
- * state from the API. The bypass affects scheduling only; it never bypasses
- * authorization, business state, financial validation or lock rules.
- */
 @Injectable()
 export class OperationSchedulePolicyService {
   readonly bypass: boolean;
@@ -33,12 +26,8 @@ export class OperationSchedulePolicyService {
     return {
       scheduleBypassEnabled: this.bypass,
       mode: this.bypass ? 'TEST' : 'PRODUCTION',
-      auction: {
-        dateTimeEnforced: !this.bypass,
-      },
-      fixedDraw: {
-        dateTimeEnforced: !this.bypass,
-      },
+      auction: { dateTimeEnforced: !this.bypass },
+      fixedDraw: { dateTimeEnforced: !this.bypass },
       security: {
         authorizationStillRequired: true,
         financialValidationStillRequired: true,
