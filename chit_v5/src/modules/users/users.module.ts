@@ -1,4 +1,4 @@
-import {Body,Controller,Get,Module,Put,UseGuards} from '@nestjs/common';
+import {Body,Controller,Get,Module,Put,UseGuards,NotFoundException} from '@nestjs/common';
 import {ApiBearerAuth,ApiOperation,ApiProperty,ApiTags} from '@nestjs/swagger';
 import {IsBoolean,IsOptional,IsString,MaxLength} from 'class-validator';
 import {JwtAuthGuard} from '../auth/jwt-auth.guard';
@@ -6,6 +6,11 @@ import { AuthModule } from '../auth/auth.module';
 import {CurrentUser} from '../auth/current-user.decorator';
 import {Sequelize} from 'sequelize-typescript';
 
+class UpdateProfileDto{
+ @ApiProperty({required:false}) @IsOptional() @IsString() @MaxLength(120) name?:string;
+ @ApiProperty({required:false}) @IsOptional() @IsString() @MaxLength(10) preferredLanguage?:string;
+ @ApiProperty({required:false}) @IsOptional() @IsString() @MaxLength(80) timezone?:string;
+}
 class PaymentProfileDto{
  @ApiProperty({required:false}) @IsOptional() @IsString() @MaxLength(255) upiId?:string;
  @ApiProperty({required:false}) @IsOptional() @IsString() @MaxLength(150) bankName?:string;
@@ -25,6 +30,22 @@ class UsersController{
   const [participant]:any=await this.db.query(`SELECT id FROM chit_participants WHERE user_id=:id AND status IN ('ACTIVE','INVITED') ORDER BY created_at DESC LIMIT 1`,{replacements:{id:user.sub}});
   return {success:true,data:{...rows[0],roles:roles.map((r:any)=>r.role),participantId:participant[0]?.id??null}};
  }
+ @Put('me')
+ async updateMe(@Body() dto:UpdateProfileDto,@CurrentUser() user:any){
+  const [rows]:any=await this.db.query(
+   `UPDATE users SET
+      name=COALESCE(:name,name),
+      preferred_language=COALESCE(:language,preferred_language),
+      timezone=COALESCE(:timezone,timezone),
+      updated_at=NOW()
+    WHERE id=:id
+    RETURNING id,name,mobile_number AS mobile,normalized_mobile,status,preferred_language,timezone`,
+   {replacements:{id:user.sub,name:dto.name??null,language:dto.preferredLanguage??null,timezone:dto.timezone??null}});
+  if(!rows.length) throw new NotFoundException('User not found');
+  const [roles]:any=await this.db.query(`SELECT role FROM user_roles WHERE user_id=:id`,{replacements:{id:user.sub}});
+  return {success:true,data:{...rows[0],roles:roles.map((r:any)=>r.role)}};
+ }
+
  @Put('me/payment-profile')
  async paymentProfile(@Body() dto:PaymentProfileDto,@CurrentUser() user:any){
   const [rows]:any=await this.db.query(

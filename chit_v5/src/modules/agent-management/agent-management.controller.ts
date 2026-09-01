@@ -20,8 +20,13 @@ class AssignmentDto {
 @Controller({path:'chits',version:'1'})
 export class AgentManagementController {
  constructor(private readonly db:Sequelize){}
- async isCreator(chitId:string,userId:string){
-  const [r]:any=await this.db.query(`SELECT 1 FROM chits WHERE id=:c AND creator_id=:u`,{replacements:{c:chitId,u:userId}});
+ async canManageAssignment(chitId:string,userId:string){
+  const [r]:any=await this.db.query(
+   `SELECT 1 FROM chits c
+    WHERE c.id=:c AND (
+      c.creator_id=:u OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:u AND ur.role='ADMIN')
+    )`,
+   {replacements:{c:chitId,u:userId}});
   return !!r.length;
  }
  @Get('my/agent-chits') @ApiOperation({summary:'List all active chits assigned to the current agent'})
@@ -38,7 +43,7 @@ export class AgentManagementController {
  }
  @Post(':chitId/agents') @ApiOperation({summary:'Assign an agent to a chit'})
  async assign(@Param('chitId')c:string,@Body()d:AssignmentDto,@CurrentUser()u:any){
-  if(!await this.isCreator(c,u.sub))return {success:false,message:'Only the chit creator can assign agents'};
+  if(!await this.canManageAssignment(c,u.sub))return {success:false,message:'Only the chit creator can assign agents'};
   const [r]:any=await this.db.query(`
    INSERT INTO chit_agent_assignments(
     chit_id,agent_id,can_view_members,can_collect_cash,can_verify_payments,
@@ -59,7 +64,7 @@ export class AgentManagementController {
   return {success:true,data:r[0]};
  }
  @Put(':chitId/agents/:agentId') async update(@Param('chitId')c:string,@Param('agentId')a:string,@Body()d:AssignmentDto,@CurrentUser()u:any){
-  if(!await this.isCreator(c,u.sub))return {success:false,message:'Only the chit creator can update agents'};
+  if(!await this.canManageAssignment(c,u.sub))return {success:false,message:'Only the chit creator can update agents'};
   const [r]:any=await this.db.query(`
    UPDATE chit_agent_assignments SET
    can_view_members=COALESCE(:vm,can_view_members),can_collect_cash=COALESCE(:cc,can_collect_cash),
@@ -71,7 +76,7 @@ export class AgentManagementController {
   return {success:!!r.length,data:r[0]??null};
  }
  @Delete(':chitId/agents/:agentId') async remove(@Param('chitId')c:string,@Param('agentId')a:string,@CurrentUser()u:any){
-  if(!await this.isCreator(c,u.sub))return {success:false,message:'Only the chit creator can remove agents'};
+  if(!await this.canManageAssignment(c,u.sub))return {success:false,message:'Only the chit creator can remove agents'};
   const [r]:any=await this.db.query(`UPDATE chit_agent_assignments SET active=false WHERE chit_id=:c AND agent_id=:a RETURNING *`,{replacements:{c,a}});
   return {success:!!r.length,data:r[0]??null};
  }

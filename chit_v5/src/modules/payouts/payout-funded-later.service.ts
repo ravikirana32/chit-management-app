@@ -7,11 +7,19 @@ export class PayoutFundedLaterService {
 
   async list(chitId: string, userId: string) {
     const [access]: any = await this.sequelize.query(
-      `SELECT id FROM chits WHERE id=:chitId AND creator_id=:userId`,
+      `SELECT c.id
+       FROM chits c
+       LEFT JOIN chit_agent_assignments ca
+         ON ca.chit_id=c.id AND ca.active=true
+       LEFT JOIN agents ag
+         ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:userId
+       WHERE c.id=:chitId
+         AND (c.creator_id=:userId OR ca.can_manage_chit=true OR ca.can_collect_cash=true OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
+       LIMIT 1`,
       { replacements: { chitId, userId } },
     );
     if (!access.length)
-      throw new ConflictException('Only creator can view payout register');
+      throw new ConflictException('Payout register permission is required for this chit');
 
     const [rows]: any = await this.sequelize.query(
       `SELECT p.*,u.name AS recipient_name,u.mobile_number AS recipient_mobile
@@ -39,8 +47,20 @@ export class PayoutFundedLaterService {
       if (!rows.length) throw new NotFoundException('Payout not found');
       const p = rows[0];
 
-      if (p.creator_id !== actor)
-        throw new ConflictException('Only creator can settle payout');
+      const [actorAccess]: any = await this.sequelize.query(
+        `SELECT 1
+         FROM chits c
+         LEFT JOIN chit_agent_assignments ca
+           ON ca.chit_id=c.id AND ca.active=true
+         LEFT JOIN agents ag
+           ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:actor
+         WHERE c.id=:chitId
+           AND (c.creator_id=:actor OR ca.can_manage_chit=true OR ca.can_collect_cash=true OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:actor AND ur.role='ADMIN'))
+         LIMIT 1`,
+        { replacements: { chitId: p.chit_id, actor }, transaction },
+      );
+      if (!actorAccess.length)
+        throw new ConflictException('Payout settlement permission is required for this chit');
 
       if (!['SETTLED', 'FAILED'].includes(dto.status))
         throw new BadRequestException('Invalid payout status');
@@ -74,6 +94,17 @@ export class PayoutFundedLaterService {
         const collected = Number(collectionRows[0]?.collected || 0);
         const openingSavings = Number(p.accumulated_savings_amount || 0);
 
+        const [auctionRows]: any = await this.sequelize.query(
+          `SELECT auction_type,COALESCE(discount_amount,0)::numeric AS discount_amount
+           FROM auctions
+           WHERE chit_month_id=:monthId AND status='COMPLETED'
+           ORDER BY completed_at DESC LIMIT 1`,
+          {replacements:{monthId:p.chit_month_id},transaction},
+        );
+        const auction=auctionRows[0]??null;
+        const auctionDiscount=Number(auction?.discount_amount||0);
+        const additionalAuction=auction?.auction_type==='ADDITIONAL';
+
         const [otherSettledRows]: any = await this.sequelize.query(
           `SELECT COALESCE(SUM(amount),0)::numeric AS amount
            FROM payouts
@@ -94,7 +125,7 @@ export class PayoutFundedLaterService {
         );
 
         const available =
-          openingSavings + collected - otherSettledPayouts;
+          openingSavings + collected + (additionalAuction ? auctionDiscount : 0) - otherSettledPayouts;
 
         if (available < Number(p.amount)) {
           throw new ConflictException(
@@ -141,19 +172,18 @@ export class PayoutFundedLaterService {
               replacements: {
                 chitId: p.chit_id,
                 monthId: p.chit_month_id,
-                type:
-                  delta >= 0
-                    ? 'FIXED_DRAW_SURPLUS'
-                    : 'FIXED_DRAW_SAVINGS_USED',
+                type: additionalAuction
+                  ? 'ADDITIONAL_AUCTION_NET'
+                  : (auction ? 'MONTHLY_AUCTION_DISCOUNT' : (delta >= 0 ? 'FIXED_DRAW_SURPLUS' : 'FIXED_DRAW_SAVINGS_USED')),
                 amount: delta,
                 balance: closingSavings,
                 actor,
                 notes:
-                  `Fixed draw payout settlement: verified collections ₹${collected.toFixed(
+                  `${additionalAuction ? 'Additional auction' : auction ? 'Auction' : 'Fixed draw'} payout settlement: verified collections ₹${collected.toFixed(
                     2,
                   )} + opening savings ₹${openingSavings.toFixed(
                     2,
-                  )} - settled payout ₹${Number(p.amount).toFixed(
+                  )}${additionalAuction ? ` + auction discount ₹${auctionDiscount.toFixed(2)}` : ''} - settled payout ₹${Number(p.amount).toFixed(
                     2,
                   )} = closing savings ₹${closingSavings.toFixed(2)}`,
               },
@@ -228,6 +258,8 @@ export class PayoutFundedLaterService {
             openingSavings,
             payoutAmount: Number(p.amount),
             closingSavings,
+            auctionDiscount,
+            additionalAuction,
           },
         };
       }

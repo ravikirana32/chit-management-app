@@ -49,6 +49,14 @@ class ChitsController {
   let resolvedAgentId: string | null = null;
 
   return this.db.transaction(async transaction=>{
+   // If the creator is an AGENT, always resolve the canonical agents.id from JWT users.id.
+   // Never require the mobile client to know or type an agent UUID.
+   const [creatorAgent]: any = await this.db.query(
+     `SELECT id FROM agents WHERE user_id=:user AND status='ACTIVE' LIMIT 1`,
+     {replacements:{user:user.sub},transaction},
+   );
+   if (creatorAgent.length) resolvedAgentId = creatorAgent[0].id;
+
    if(agentMonths.length){
     const [agentRows]: any = await this.db.query(
       `
@@ -85,6 +93,21 @@ class ChitsController {
 
    const chit=chits[0];
 
+   // Agent-created chits are automatically assigned to that agent.
+   if (resolvedAgentId) {
+     await this.db.query(
+       `INSERT INTO chit_agent_assignments
+        (chit_id,agent_id,can_view_members,can_collect_cash,can_verify_payments,
+         can_manage_chat,can_run_draw,can_run_auction,can_manage_chit,assigned_by,active)
+        VALUES(:chit,:agent,true,true,true,true,true,true,true,:actor,true)
+        ON CONFLICT(chit_id,agent_id) DO UPDATE SET
+          can_view_members=true,can_collect_cash=true,can_verify_payments=true,
+          can_manage_chat=true,can_run_draw=true,can_run_auction=true,
+          can_manage_chit=true,active=true`,
+       {replacements:{chit:chit.id,agent:resolvedAgentId,actor:user.sub},transaction},
+     );
+   }
+
    for(let i=0;i<amounts.length;i++){
     const month=i+1;
     const date=new Date(dto.startDate);
@@ -116,7 +139,13 @@ class ChitsController {
 
  @Get() async list(@CurrentUser()user:any){
   const [rows]:any=await this.db.query(
-   `SELECT * FROM chits WHERE creator_id=:user OR id IN(SELECT chit_id FROM chit_participants WHERE user_id=:user) ORDER BY created_at DESC`,
+   `SELECT DISTINCT c.*
+    FROM chits c
+    LEFT JOIN chit_participants cp ON cp.chit_id=c.id AND cp.user_id=:user
+    LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
+    LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:user
+    WHERE c.creator_id=:user OR cp.id IS NOT NULL OR ag.id IS NOT NULL
+    ORDER BY c.created_at DESC`,
    {replacements:{user:user.sub}}
   );
   return {success:true,data:rows};
@@ -126,7 +155,12 @@ class ChitsController {
  @ApiOperation({summary:'Get chit, monthly schedule and current accumulated savings'})
  async get(@Param('id')id:string,@CurrentUser()user:any){
   const [rows]:any=await this.db.query(
-   `SELECT * FROM chits WHERE id=:id AND(creator_id=:user OR id IN(SELECT chit_id FROM chit_participants WHERE user_id=:user))`,
+   `SELECT DISTINCT c.*
+    FROM chits c
+    LEFT JOIN chit_participants cp ON cp.chit_id=c.id AND cp.user_id=:user
+    LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
+    LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:user
+    WHERE c.id=:id AND (c.creator_id=:user OR cp.id IS NOT NULL OR ag.id IS NOT NULL)`,
    {replacements:{id,user:user.sub}}
   );
   if(!rows.length)throw new NotFoundException('Chit not found');
@@ -163,7 +197,10 @@ class ChitsController {
  @ApiOperation({summary:'Show agent current savings, monthly planned payout, projected savings and final zero-balance adjustment amount'})
  async financialSummary(@Param('id')id:string,@CurrentUser()user:any){
   const [rows]:any=await this.db.query(
-   `SELECT * FROM chits WHERE id=:id AND creator_id=:user`,
+   `SELECT DISTINCT c.* FROM chits c
+     LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
+     LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:user
+     WHERE c.id=:id AND (c.creator_id=:user OR ca.can_manage_chit=true)`,
    {replacements:{id,user:user.sub}}
   );
   if(!rows.length)throw new NotFoundException('Chit not found');

@@ -331,11 +331,17 @@ export class PaymentWorkflowService {
 
       const p = r[0];
 
-      if (p.creator_id !== verifier) {
-        throw new ConflictException(
-          'Only the chit creator can verify payments',
-        );
-      }
+      const [verifyAccess]: any = await this.sequelize.query(
+        `SELECT 1 FROM chits c
+         LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
+         LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:verifier
+         WHERE c.id=:chitId
+           AND (c.creator_id=:verifier OR ca.can_verify_payments=true)
+         LIMIT 1`,
+        { replacements: { chitId:p.chit_id, verifier }, transaction },
+      );
+      if (!verifyAccess.length)
+        throw new ConflictException('Payment verification permission is required for this chit');
 
       if (p.status === 'VERIFIED') {
         throw new ConflictException('Payment already verified');
@@ -437,16 +443,19 @@ export class PaymentWorkflowService {
   ) {
     return this.sequelize.transaction(async transaction => {
       const [access]: any = await this.sequelize.query(
-        `SELECT id
-         FROM chits
-         WHERE id=:chitId AND creator_id=:verifier
-         FOR UPDATE`,
+        `SELECT c.id
+         FROM chits c
+         LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
+         LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:verifier
+         WHERE c.id=:chitId
+           AND (c.creator_id=:verifier OR ca.can_verify_payments=true)
+         FOR UPDATE OF c`,
         { replacements: { chitId, verifier }, transaction },
       );
 
       if (!access.length) {
         throw new ConflictException(
-          'Only the chit creator can verify payments',
+          'Payment verification permission is required for this chit',
         );
       }
 

@@ -14,6 +14,11 @@ export class AuctionService {
       { replacements: { chitId, userId }, transaction },
     );
     if (creator.length) return true;
+    const [admin]: any = await this.sequelize.query(
+      `SELECT 1 FROM user_roles WHERE user_id=:userId AND role='ADMIN' LIMIT 1`,
+      { replacements: { userId }, transaction },
+    );
+    if (admin.length) return true;
     const [agent]: any = await this.sequelize.query(
       `SELECT 1
        FROM chit_agent_assignments ca
@@ -185,6 +190,21 @@ export class AuctionService {
     });
   }
 
+  async current(chitId: string, monthId: string, userId: string) {
+    await this.assertCanRunAuction(chitId, userId);
+    const [rows]: any = await this.sequelize.query(
+      `SELECT a.id,a.status,a.auction_type,a.starts_at,a.ends_at,a.funding_amount,
+              a.winning_bid_amount,a.discount_amount,a.payout_amount,
+              a.chit_month_id
+       FROM auctions a
+       WHERE a.chit_id=:chitId AND a.chit_month_id=:monthId
+       ORDER BY a.created_at DESC
+       LIMIT 1`,
+      { replacements: { chitId, monthId } },
+    );
+    return { success:true, data: rows[0] ?? null };
+  }
+
   async getSavings(chitId:string,userId:string){
     await this.assertCanRunAuction(chitId,userId);
     const [chits]:any=await this.sequelize.query(`SELECT id,total_chit_amount,accumulated_savings_amount,total_members,total_months FROM chits WHERE id=:chitId`,{replacements:{chitId}});
@@ -229,25 +249,24 @@ export class AuctionService {
       const winner=bids[0], pot=Number(a.auction_amount), discount=Number(winner.amount), payoutAmount=pot-discount;
       if(payoutAmount<0)throw new BadRequestException('Calculated payout cannot be negative');
       const isAdditional=a.auction_type==='ADDITIONAL';
-      let savingsBefore=Number(a.accumulated_savings_amount||0), savingsAfter=savingsBefore;
+      const savingsBefore=Number(a.accumulated_savings_amount||0);
+      // Do not mutate chit savings at auction finalization. The payout is still
+      // PENDING and the real collection/settlement may happen later by CASH or UPI.
+      // Savings become authoritative only when the payout is SETTLED.
       if(isAdditional){
-        const face=Number(a.total_chit_amount); if(savingsBefore<face)throw new ConflictException('Savings are below the chit total amount');
-        savingsAfter=savingsBefore-payoutAmount+discount;
-      } else { savingsAfter=savingsBefore+discount; }
+        const face=Number(a.total_chit_amount);
+        if(savingsBefore<face)throw new ConflictException('Savings are below the chit total amount');
+      }
+      const savingsAfter=savingsBefore;
       const [winnerRows]:any=await this.sequelize.query(`INSERT INTO auction_winners(id,auction_id,chit_participant_id,winning_bid_id,winning_bid_amount,selected_at,created_at,updated_at) VALUES(gen_random_uuid(),:auctionId,:pid,:bidId,:amount,NOW(),NOW(),NOW()) RETURNING *`,{replacements:{auctionId,pid:winner.chit_participant_id,bidId:winner.id,amount:discount},transaction});
       const [payoutRows]:any=await this.sequelize.query(`INSERT INTO payouts(id,chit_id,chit_month_id,recipient_user_id,amount,payment_method,status,recorded_by,notes,created_at,updated_at) VALUES(gen_random_uuid(),:chitId,:monthId,:userId,:amount,'UPI','PENDING',:actor,:notes,NOW(),NOW()) RETURNING *`,{replacements:{chitId:a.chit_id,monthId:a.chit_month_id??null,userId:winner.user_id,amount:payoutAmount,actor:actorUserId,notes:isAdditional?'Additional auction payout from chit savings':`Auction discount: ₹${discount.toFixed(2)}`},transaction});
       await this.sequelize.query(`UPDATE bids SET status=CASE WHEN id=:winnerId THEN 'WINNING' ELSE 'NON_WINNING' END,updated_at=NOW() WHERE auction_id=:auctionId AND status='VALID'`,{replacements:{winnerId:winner.id,auctionId},transaction});
       await this.sequelize.query(`UPDATE auctions SET status='COMPLETED',winner_participant_id=:pid,winning_bid_amount=:amount,discount_amount=:discount,payout_amount=:payout,completed_at=NOW(),updated_at=NOW() WHERE id=:auctionId`,{replacements:{auctionId,pid:winner.chit_participant_id,amount:discount,discount,payout:payoutAmount},transaction});
       if(a.chit_month_id){
         await this.sequelize.query(`UPDATE chit_months SET status='COMPLETED',updated_at=NOW() WHERE id=:monthId`,{replacements:{monthId:a.chit_month_id},transaction});
-        await this.sequelize.query(`UPDATE chits SET accumulated_savings_amount=:savings,completed_months=COALESCE(completed_months,0)+1,updated_at=NOW() WHERE id=:chitId`,{replacements:{chitId:a.chit_id,savings:savingsAfter},transaction});
-      } else {
-        // An additional auction consumes one future prize entitlement, so the
-        // original total_months remains immutable while completed_months advances.
-        await this.sequelize.query(`UPDATE chits SET accumulated_savings_amount=:savings,completed_months=COALESCE(completed_months,0)+1,updated_at=NOW() WHERE id=:chitId`,{replacements:{chitId:a.chit_id,savings:savingsAfter},transaction});
       }
-      const delta=isAdditional ? (-payoutAmount+discount) : discount;
-      await this.sequelize.query(`INSERT INTO chit_savings_transactions(id,chit_id,auction_id,chit_month_id,transaction_type,amount,balance_after,agent_user_id,notes,created_at,updated_at) VALUES(gen_random_uuid(),:chitId,:auctionId,:monthId,:type,:delta,:balance,:agent,:notes,NOW(),NOW())`,{replacements:{chitId:a.chit_id,auctionId,monthId:a.chit_month_id??null,type:isAdditional?'ADDITIONAL_AUCTION_NET':'MONTHLY_AUCTION_DISCOUNT',delta,balance:savingsAfter,agent:actorUserId,notes:isAdditional?`Additional auction: savings used ₹${payoutAmount.toFixed(2)}, winning bid added ₹${discount.toFixed(2)}`:`Monthly auction discount retained as chit savings: ₹${discount.toFixed(2)}`},transaction});
+      // Financial savings transaction is deliberately deferred to payout settlement.
+      // This keeps collections, payout and savings atomic even when members pay later.
       await this.audit(auctionId,a.chit_id,actorUserId,'AUCTION_COMPLETED',{winnerParticipantId:winner.chit_participant_id,winningBid:discount,scheduledAmount:pot,payoutAmount,bidCount:bids.length,isAdditional,savingsBefore,savingsAfter},transaction);
       this.gateway.emitClosed(auctionId,{auctionId,winnerParticipantId:winner.chit_participant_id,winningBid:discount,payoutAmount,savingsAfter});
       return {auctionId,winnerParticipantId:winner.chit_participant_id,winningBid:discount,scheduledAmount:pot,payoutAmount,bidCount:bids.length,isAdditional,savingsBefore,savingsAfter,remainingMonths:Math.max(0,Number(a.total_months)-Number(a.completed_months||0)-1),rule:'Winner remains active and continues future contributions.',winner:winnerRows[0],payout:payoutRows[0]};

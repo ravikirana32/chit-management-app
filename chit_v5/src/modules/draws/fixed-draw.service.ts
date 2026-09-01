@@ -11,6 +11,11 @@ export class FixedDrawService {
       {replacements:{chitId,userId:actorUserId},transaction}
     );
     if(creator.length) return true;
+    const [admin]:any=await this.sequelize.query(
+      `SELECT 1 FROM user_roles WHERE user_id=:userId AND role='ADMIN' LIMIT 1`,
+      {replacements:{userId:actorUserId},transaction}
+    );
+    if(admin.length) return true;
     const [agent]:any=await this.sequelize.query(
       `SELECT 1
        FROM chit_agent_assignments ca

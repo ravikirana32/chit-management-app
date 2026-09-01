@@ -82,6 +82,8 @@ export default function ChitDetail(){
             {m.month_type==='ACTION'&&chit.chit_type==='AUCTION'&&<Button title="Open Auction" secondary onPress={()=>router.push({pathname:'/auction',params:{chitId:String(chit.id),monthId:String(m.id)}})}/>}
             {m.month_type==='AGENT_CHIT'&&<Button title="Agent Month" secondary onPress={()=>router.push({pathname:'/agent-month',params:{chitId:String(chit.id),monthId:String(m.id)}})}/>}
             <Button title="Contribution / Payments" secondary onPress={()=>router.push({pathname:'/payment',params:{chitId:String(chit.id),monthId:String(m.id)}})}/>
+            {(manage||isAdmin(user)||isCreator(user,chit))&&<Button title="Reconciliation" secondary onPress={()=>router.push({pathname:'/reconciliation',params:{chitId:String(chit.id),monthId:String(m.id)}})}/>}
+            {(manage||isAdmin(user)||isCreator(user,chit))&&m.status==='COMPLETED'&&<Button title="Close & Lock Month" secondary onPress={()=>router.push({pathname:'/month-close',params:{monthId:String(m.id)}})}/>}
           </Card>
         )}
       </Card>

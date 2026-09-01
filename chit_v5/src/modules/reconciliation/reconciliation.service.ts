@@ -7,9 +7,15 @@ export class ReconciliationService {
 
   async chitSummary(chitId:string,userId:string) {
     const [access]:any=await this.sequelize.query(
-      `SELECT id,name,status,total_members,total_months FROM chits WHERE id=:chitId AND creator_id=:userId`,
+      `SELECT c.id,c.name,c.status,c.total_members,c.total_months
+       FROM chits c
+       LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
+       LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:userId
+       WHERE c.id=:chitId
+         AND (c.creator_id=:userId OR ca.can_manage_chit=true OR ca.can_collect_cash=true OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
+       LIMIT 1`,
       {replacements:{chitId,userId}});
-    if(!access.length) throw new ConflictException('Only creator can view reconciliation');
+    if(!access.length) throw new ConflictException('Reconciliation permission is required for this chit');
     const [summary]:any=await this.sequelize.query(
       `SELECT
         COALESCE((SELECT SUM(amount) FROM payments WHERE chit_id=:chitId AND status='VERIFIED'),0) AS collected,
@@ -26,7 +32,15 @@ export class ReconciliationService {
       `SELECT m.*,c.creator_id FROM chit_months m JOIN chits c ON c.id=m.chit_id
        WHERE m.id=:monthId AND m.chit_id=:chitId`,{replacements:{monthId,chitId}});
     if(!rows.length) throw new NotFoundException('Month not found');
-    if(rows[0].creator_id!==userId) throw new ConflictException('Only creator can view reconciliation');
+    const [access]:any=await this.sequelize.query(
+      `SELECT 1 FROM chits c
+       LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
+       LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:userId
+       WHERE c.id=:chitId AND
+         (c.creator_id=:userId OR ca.can_manage_chit=true OR ca.can_collect_cash=true OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
+       LIMIT 1`,
+      {replacements:{chitId,userId}});
+    if(!access.length) throw new ConflictException('Reconciliation permission is required for this chit');
     const [r]:any=await this.sequelize.query(
       `SELECT m.id,m.month_number,m.scheduled_amount,m.status,
        COALESCE((SELECT SUM(amount) FROM payments WHERE chit_month_id=m.id AND status='VERIFIED'),0) AS collected,
@@ -40,7 +54,7 @@ export class ReconciliationService {
 
   async memberStatements(chitId:string,userId:string) {
     const [access]:any=await this.sequelize.query(`SELECT id FROM chits WHERE id=:chitId AND creator_id=:userId`,{replacements:{chitId,userId}});
-    if(!access.length) throw new ConflictException('Only creator can export statements');
+    if(!access.length) throw new ConflictException('Reconciliation permission is required for this chit');
     const [rows]:any=await this.sequelize.query(
       `SELECT cp.id AS participant_id,cp.participant_sequence,u.name,u.mobile_number AS mobile,
         COALESCE(SUM(CASE WHEN le.amount>0 THEN le.amount ELSE 0 END),0) AS credits,
@@ -56,7 +70,12 @@ export class ReconciliationService {
   }
 
   async final(chitId:string,userId:string){
-    const [chit]:any=await this.sequelize.query(`SELECT * FROM chits WHERE id=:chitId AND creator_id=:userId`,{replacements:{chitId,userId}});
+    const [chit]:any=await this.sequelize.query(`SELECT c.* FROM chits c
+       LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
+       LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:userId
+       WHERE c.id=:chitId
+         AND (c.creator_id=:userId OR ca.can_manage_chit=true OR ca.can_collect_cash=true OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
+       LIMIT 1`,{replacements:{chitId,userId}});
     if(!chit.length) throw new NotFoundException('Chit not found');
     const [months]:any=await this.sequelize.query(`SELECT COUNT(*)::int total,COUNT(*) FILTER(WHERE status='LOCKED')::int locked FROM chit_months WHERE chit_id=:chitId`,{replacements:{chitId}});
     const [ob]:any=await this.sequelize.query(`SELECT COALESCE(SUM(outstanding_amount),0) outstanding,COUNT(*) FILTER(WHERE status IN ('OVERDUE','DEFAULTED','RECOVERY_PLAN'))::int exceptions FROM contribution_obligations o JOIN chit_months m ON m.id=o.chit_month_id WHERE m.chit_id=:chitId`,{replacements:{chitId}});

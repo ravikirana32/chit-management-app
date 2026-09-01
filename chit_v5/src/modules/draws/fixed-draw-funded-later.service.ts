@@ -32,8 +32,34 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
       if (!monthRows.length) throw new NotFoundException('Chit month not found');
       const m = monthRows[0];
 
-      if (m.creator_id !== actorUserId)
-        throw new ConflictException('Only creator can run the draw');
+      const [creatorAccess]: any = await this.db.query(
+        `SELECT 1 FROM chits WHERE id=:chitId AND creator_id=:userId LIMIT 1`,
+        { replacements: { chitId, userId: actorUserId }, transaction },
+      );
+      if (!creatorAccess.length) {
+        const [adminAccess]: any = await this.db.query(
+          `SELECT 1 FROM user_roles WHERE user_id=:userId AND role='ADMIN' LIMIT 1`,
+          { replacements: { userId: actorUserId }, transaction },
+        );
+        if (adminAccess.length) {
+          // Admin may run the draw without being the chit creator.
+        } else {
+        const [agentAccess]: any = await this.db.query(
+          `SELECT 1
+           FROM chit_agent_assignments ca
+           JOIN agents ag ON ag.id=ca.agent_id
+           WHERE ca.chit_id=:chitId
+             AND ag.user_id=:userId
+             AND ca.active=true
+             AND ca.can_run_draw=true
+             AND ag.status='ACTIVE'
+           LIMIT 1`,
+          { replacements: { chitId, userId: actorUserId }, transaction },
+        );
+        if (!agentAccess.length)
+          throw new ConflictException('Fixed draw permission is required for this chit');
+        }
+        }
       if (m.chit_type !== 'FIXED_DRAW')
         throw new BadRequestException('This endpoint is only for FIXED_DRAW chits');
       if (m.month_type === 'AGENT_CHIT')

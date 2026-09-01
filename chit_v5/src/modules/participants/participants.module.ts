@@ -10,15 +10,27 @@ class InviteDto{@IsString() @Length(10,20) mobile!:string}
 class ParticipantsController{
  constructor(private readonly db:Sequelize){}
  @Get() async list(@Param('chitId')chitId:string,@CurrentUser()user:any){
-  const [access]:any=await this.db.query(`SELECT id FROM chits WHERE id=:chitId AND creator_id=:user`,{replacements:{chitId,user:user.sub}});
-  if(!access.length)throw new Error('Only creator can list participants');
+  const [access]:any=await this.db.query(
+   `SELECT c.id FROM chits c
+    LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
+    LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:user
+    WHERE c.id=:chitId AND
+      (c.creator_id=:user OR ca.can_view_members=true) LIMIT 1`,
+   {replacements:{chitId,user:user.sub}});
+  if(!access.length)throw new Error('Member-view permission is required for this chit');
   const [rows]:any=await this.db.query(`SELECT cp.*,u.name,u.mobile_number AS mobile FROM chit_participants cp JOIN users u ON u.id=cp.user_id WHERE cp.chit_id=:chitId ORDER BY cp.participant_sequence`,{replacements:{chitId}});
   return {success:true,data:rows};
  }
  @Post('invite') @ApiOperation({summary:'Invite an existing user by mobile'})
  async invite(@Param('chitId')chitId:string,@Body()dto:InviteDto,@CurrentUser()user:any){
-  const [access]:any=await this.db.query(`SELECT * FROM chits WHERE id=:chitId AND creator_id=:user`,{replacements:{chitId,user:user.sub}});
-  if(!access.length)throw new Error('Only creator can invite');
+  const [access]:any=await this.db.query(
+   `SELECT c.* FROM chits c
+    LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
+    LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:user
+    WHERE c.id=:chitId AND
+      (c.creator_id=:user OR ca.can_view_members=true) LIMIT 1`,
+   {replacements:{chitId,user:user.sub}});
+  if(!access.length)throw new Error('Member invitation permission is required for this chit');
   const [u]:any=await this.db.query(`SELECT id FROM users WHERE normalized_mobile=:mobile OR mobile_number=:mobile LIMIT 1`,{replacements:{mobile:dto.mobile}});
   if(!u.length)throw new Error('Member must register before invitation');
   const [count]:any=await this.db.query(`SELECT COUNT(*)::int AS n FROM chit_participants WHERE chit_id=:chitId`,{replacements:{chitId}});

@@ -28,6 +28,8 @@ class AuctionsController {
  bid(@Param('auctionId')auctionId:string,@Body()dto:PlaceBidDto,@CurrentUser()user:any){return this.service.placeBid(auctionId,dto.participantId,user.sub,dto.bidAmount)}
  @Post(':auctionId/finalize') @ApiOperation({summary:'Finalize a closed/expired auction'})
  finalize(@Param('auctionId')auctionId:string,@Body()_dto:FinalizeAuctionDto,@CurrentUser()user:any){return this.service.finalize(auctionId,user.sub)}
+ @Get('chits/:chitId/months/:monthId/current') @ApiOperation({summary:'Get the latest monthly auction for a chit/month'})
+ current(@Param('chitId')chitId:string,@Param('monthId')monthId:string,@CurrentUser()user:any){return this.service.current(chitId,monthId,user.sub)}
  @Get(':auctionId/state') @ApiOperation({summary:'Get current auction state and recent bids'})
  state(@Param('auctionId')auctionId:string){return this.auctionState.getState(auctionId)}
  @Get('chits/:chitId/savings') @ApiOperation({summary:'View chit savings balance and transaction history'})
