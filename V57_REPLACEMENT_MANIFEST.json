@@ -1,0 +1,18 @@
+{
+  "baseline": "ravikirana32/chit-management-app main",
+  "purpose": "server-authoritative schedule policy and mobile schedule UX",
+  "files": [
+    "chit_v5/src/common/enterprise-hardening/operation-schedule-policy.service.ts",
+    "chit_v5/src/modules/operations/operations.module.ts",
+    "chit_v5/src/modules/auctions/auction-state.service.ts",
+    "mobile-app/src/api/all.ts",
+    "mobile-app/app/auction.tsx",
+    "mobile-app/app/fixed-draw.tsx",
+    "chit_v5/.env.example",
+    "V57_SCHEDULE_POLICY_STATUS.md",
+    "V57_REPLACEMENT_MANIFEST.json"
+  ],
+  "flag": "ALLOW_SCHEDULED_OPERATION_BYPASS",
+  "production_value": "false",
+  "test_value": "true"
+}
