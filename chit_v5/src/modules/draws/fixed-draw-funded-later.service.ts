@@ -6,8 +6,9 @@ import { OperationSchedulePolicyService } from '../../common/enterprise-hardenin
 
 @Injectable()
 export class FixedDrawFundedLaterService extends FixedDrawService {
-  constructor(private readonly db: Sequelize, private readonly schedulePolicy: OperationSchedulePolicyService) {
+  constructor(private readonly db: Sequelize, schedulePolicy: OperationSchedulePolicyService) {
     super(db, schedulePolicy);
+    super(db);
   }
 
   /**
@@ -80,10 +81,8 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
         throw new ConflictException('Draw is already completed');
 
       const now = new Date();
-      this.schedulePolicy.assertScheduleAllowed(
-        !draw.scheduled_at || now >= new Date(draw.scheduled_at),
-        'Draw time has not arrived',
-      );
+      if (draw.scheduled_at && now < new Date(draw.scheduled_at))
+        throw new ConflictException('Draw time has not arrived');
 
       const [eligible]: any = await this.db.query(
         `SELECT dp.*, cp.user_id
