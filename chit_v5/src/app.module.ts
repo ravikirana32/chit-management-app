@@ -26,6 +26,7 @@ import { ParticipantsModule } from './modules/participants/participants.module';
 import { AdminManagementModule } from './modules/admin-management/admin-management.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
 import { EnterpriseHardeningModule } from './common/enterprise-hardening/enterprise-hardening.module';
+import { AdminLifecycleModule } from './modules/admin-lifecycle/admin-lifecycle.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { EnterpriseHardeningModule } from './common/enterprise-hardening/enterpr
     AuthModule,
     UsersModule,
     AdminManagementModule,
+    AdminLifecycleModule,
     ChitsModule,
     ParticipantsModule,
     InvitationsModule,

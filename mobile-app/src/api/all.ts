@@ -28,6 +28,9 @@ export const usersApi={
  createAgent:(p:any)=>api.post('/v1/admin/agents',p),
  getAgent:(id:string)=>api.get(`/v1/admin/agents/${id}`),
  updateAgent:(id:string,p:any)=>api.put(`/v1/admin/agents/${id}`,p),
+ deleteAgent:(id:string)=>api.delete(`/v1/admin/agents/${id}`),
+ deleteChit:(id:string)=>api.delete(`/v1/admin/chits/${id}`),
+ removeMember:(chitId:string,participantId:string)=>api.delete(`/v1/admin/chits/${chitId}/participants/${participantId}`),
 };
 
 export const operationsApi={
@@ -56,6 +59,7 @@ export const agentApi={
 
 export const participantsApi={
  list:(id:string)=>api.get(`/v1/chits/${id}/participants`),
+ invite:(id:string,mobile:string)=>api.post(`/v1/chits/${id}/participants/invite`,{mobile}),
  invitations:()=>api.get('/v1/invitations/me'),
  accept:(id:string)=>api.post(`/v1/invitations/${id}/accept`),
 };
