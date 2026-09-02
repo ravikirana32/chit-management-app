@@ -151,14 +151,22 @@ class ChitsController {
     throw new ConflictException('Month schedule cannot be changed after publication/activation');
    if(dto.months.length!==Number(chit.total_months))throw new BadRequestException(`Exactly ${chit.total_months} monthly entries are required`);
    const seen=new Set<number>();
+   const [creatorAgent]:any=await this.db.query(`SELECT id FROM agents WHERE user_id=:user AND status='ACTIVE' LIMIT 1`,{replacements:{user:user.sub},transaction});
+   const creatorAgentId=creatorAgent.length?creatorAgent[0].id:null;
+   const faceAmount=Number(chit.total_chit_amount||0);
    for(const m of dto.months){
     if(seen.has(m.monthNumber))throw new BadRequestException(`Month ${m.monthNumber} is duplicated`); seen.add(m.monthNumber);
     if(m.monthNumber<1||m.monthNumber>Number(chit.total_months))throw new BadRequestException('Invalid month number');
     const amount=Number(m.scheduledAmount),payout=Number(m.winnerPayoutAmount);
     if(!Number.isFinite(amount)||amount<=0)throw new BadRequestException(`Month ${m.monthNumber} contribution amount must be positive`);
     if(!Number.isFinite(payout)||payout<=0)throw new BadRequestException(`Month ${m.monthNumber} payout amount must be positive`);
-    if(m.monthType==='AGENT_CHIT'&&!m.agentId)throw new BadRequestException(`Month ${m.monthNumber} requires an agent`);
+    if(m.monthType==='AGENT_CHIT'&&!m.agentId){
+      if(!creatorAgentId)throw new BadRequestException(`Month ${m.monthNumber} requires an active agent`);
+      m.agentId=creatorAgentId;
+    }
     if(m.monthType!=='AGENT_CHIT'&&m.agentId)throw new BadRequestException(`Month ${m.monthNumber} cannot contain an agent`);
+    if(m.monthType==='AGENT_CHIT' && (!Number.isFinite(faceAmount)||faceAmount<=0))throw new BadRequestException('Chit total amount must be positive for AGENT_CHIT months');
+    if(m.monthType==='AGENT_CHIT')m.winnerPayoutAmount=String(faceAmount.toFixed(2));
     if(m.agentId){
       const [agentRows]:any=await this.db.query(`SELECT id,user_id,name,status FROM agents
         WHERE (id=:agentId OR user_id=:agentId) AND status='ACTIVE' LIMIT 1`,{replacements:{agentId:m.agentId},transaction});
