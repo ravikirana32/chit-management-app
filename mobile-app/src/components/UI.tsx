@@ -65,7 +65,7 @@ export function Select({label,value,placeholder='Select',options,onChange}:{labe
 
 export const Badge=({children,tone='neutral'}:{children:React.ReactNode;tone?:string})=>
   <View style={[s.badge,tone==='green'&&s.bgGreen,tone==='red'&&s.bgRed,tone==='orange'&&s.bgOrange,tone==='purple'&&s.bgPurple]}>
-    <Text style={s.badgeText}>{children}</Text>
+    <Text style={s.badgeText}>{typeof children==='string'||typeof children==='number'?String(children):children}</Text>
   </View>;
 
 export const Stat=({label,value}:any)=>

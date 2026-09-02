@@ -14,7 +14,7 @@ export class AuctionAutoCloseService {
  }
  private async closeOne(auctionId:string){
   await this.sequelize.transaction(async transaction=>{
-   const [rows]:any=await this.sequelize.query(`SELECT a.*,m.chit_id AS month_chit_id FROM auctions a LEFT JOIN chit_months m ON m.id=a.chit_month_id WHERE a.id=:auctionId FOR UPDATE`,{replacements:{auctionId},transaction});
+   const [rows]:any=await this.sequelize.query(`SELECT a.*,m.chit_id AS month_chit_id FROM auctions a LEFT JOIN chit_months m ON m.id=a.chit_month_id WHERE a.id=:auctionId FOR UPDATE OF a`,{replacements:{auctionId},transaction});
    if(!rows.length||rows[0].status!=='OPEN')return; const a=rows[0];
    await this.sequelize.query(`UPDATE auctions SET status='CLOSED_PENDING_FINALIZATION',updated_at=NOW() WHERE id=:auctionId`,{replacements:{auctionId},transaction});
    if(a.chit_month_id)await this.sequelize.query(`UPDATE chit_months SET status='READY_FOR_ACTION',updated_at=NOW() WHERE id=:monthId AND status='BIDDING'`,{replacements:{monthId:a.chit_month_id},transaction});

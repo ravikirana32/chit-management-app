@@ -6,10 +6,7 @@ import { OperationSchedulePolicyService } from '../../common/enterprise-hardenin
 
 @Injectable()
 export class FixedDrawFundedLaterService extends FixedDrawService {
-  constructor(
-    private readonly db: Sequelize,
-    schedulePolicy: OperationSchedulePolicyService,
-  ) {
+  constructor(private readonly db: Sequelize, private readonly schedulePolicy: OperationSchedulePolicyService) {
     super(db, schedulePolicy);
   }
 
@@ -21,7 +18,7 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
    * - Funds are checked when the payout is SETTLED, not when the winner is selected.
    * - Savings are updated only after settlement, using verified collections + opening savings - payout.
    */
-  async runDraw(chitId: string, monthId: string, actorUserId: string): Promise<any> {
+  async runDraw(chitId: string, monthId: string, actorUserId: string) {
     return this.db.transaction(async transaction => {
       const [monthRows]: any = await this.db.query(
         `SELECT m.*, c.creator_id, c.status AS chit_status, c.chit_type,
@@ -45,24 +42,25 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
           `SELECT 1 FROM user_roles WHERE user_id=:userId AND role='ADMIN' LIMIT 1`,
           { replacements: { userId: actorUserId }, transaction },
         );
-        if (!adminAccess.length) {
-          const [agentAccess]: any = await this.db.query(
-            `SELECT 1
-             FROM chit_agent_assignments ca
-             JOIN agents ag ON ag.id=ca.agent_id
-             WHERE ca.chit_id=:chitId
-               AND ag.user_id=:userId
-               AND ca.active=true
-               AND ca.can_run_draw=true
-               AND ag.status='ACTIVE'
-             LIMIT 1`,
-            { replacements: { chitId, userId: actorUserId }, transaction },
-          );
-          if (!agentAccess.length)
-            throw new ConflictException('Fixed draw permission is required for this chit');
+        if (adminAccess.length) {
+          // Admin may run the draw without being the chit creator.
+        } else {
+        const [agentAccess]: any = await this.db.query(
+          `SELECT 1
+           FROM chit_agent_assignments ca
+           JOIN agents ag ON ag.id=ca.agent_id
+           WHERE ca.chit_id=:chitId
+             AND ag.user_id=:userId
+             AND ca.active=true
+             AND ca.can_run_draw=true
+             AND ag.status='ACTIVE'
+           LIMIT 1`,
+          { replacements: { chitId, userId: actorUserId }, transaction },
+        );
+        if (!agentAccess.length)
+          throw new ConflictException('Fixed draw permission is required for this chit');
         }
-      }
-
+        }
       if (m.chit_type !== 'FIXED_DRAW')
         throw new BadRequestException('This endpoint is only for FIXED_DRAW chits');
       if (m.month_type === 'AGENT_CHIT')
@@ -82,8 +80,10 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
         throw new ConflictException('Draw is already completed');
 
       const now = new Date();
-      if (draw.scheduled_at && now < new Date(draw.scheduled_at))
-        throw new ConflictException('Draw time has not arrived');
+      this.schedulePolicy.assertScheduleAllowed(
+        !draw.scheduled_at || now >= new Date(draw.scheduled_at),
+        'Draw time has not arrived',
+      );
 
       const [eligible]: any = await this.db.query(
         `SELECT dp.*, cp.user_id
@@ -168,6 +168,11 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
         { replacements: { drawId: draw.id }, transaction },
       );
 
+      /*
+       * Month becomes COMPLETED operationally, but is NOT financially locked.
+       * month-close will refuse to lock it while obligations or the pending
+       * payout remain unresolved.
+       */
       await this.db.query(
         `UPDATE chit_months
          SET status='COMPLETED',

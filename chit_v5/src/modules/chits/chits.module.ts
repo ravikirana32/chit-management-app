@@ -82,7 +82,7 @@ class ChitsController {
     LEFT JOIN chit_participants cp ON cp.chit_id=c.id AND cp.user_id=:user
     LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
     LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:user
-    WHERE c.creator_id=:user OR cp.id IS NOT NULL OR ag.id IS NOT NULL ORDER BY c.created_at DESC`,
+    WHERE c.status<>'DELETED' AND (c.creator_id=:user OR cp.id IS NOT NULL OR ag.id IS NOT NULL OR EXISTS(SELECT 1 FROM user_roles ur WHERE ur.user_id=:user AND ur.role='ADMIN')) ORDER BY c.created_at DESC`,
     {replacements:{user:user.sub}});
   return {success:true,data:rows};
  }
@@ -93,7 +93,7 @@ class ChitsController {
     LEFT JOIN chit_participants cp ON cp.chit_id=c.id AND cp.user_id=:user
     LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
     LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:user
-    WHERE c.id=:id AND (c.creator_id=:user OR cp.id IS NOT NULL OR ag.id IS NOT NULL)`,
+    WHERE c.id=:id AND c.status<>'DELETED' AND (c.creator_id=:user OR cp.id IS NOT NULL OR ag.id IS NOT NULL OR EXISTS(SELECT 1 FROM user_roles ur WHERE ur.user_id=:user AND ur.role='ADMIN'))`,
     {replacements:{id,user:user.sub}});
   if(!rows.length)throw new NotFoundException('Chit not found');
   const [months]:any=await this.db.query(`SELECT cm.*,
@@ -111,7 +111,7 @@ class ChitsController {
   const [rows]:any=await this.db.query(`SELECT DISTINCT c.* FROM chits c
     LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
     LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:user
-    WHERE c.id=:id AND (c.creator_id=:user OR ca.can_manage_chit=true)`,{replacements:{id,user:user.sub}});
+    WHERE c.id=:id AND (c.creator_id=:user OR (ag.id IS NOT NULL AND ca.can_manage_chit=true) OR EXISTS(SELECT 1 FROM user_roles ur WHERE ur.user_id=:user AND ur.role='ADMIN'))`,{replacements:{id,user:user.sub}});
   if(!rows.length)throw new NotFoundException('Chit not found');
   const chit=rows[0];
   const [months]:any=await this.db.query(`SELECT cm.*,
@@ -209,11 +209,11 @@ class ChitsController {
    if(c.status!=='READY_TO_START')throw new ConflictException(`Chit cannot be started in its current state: ${c.status}`);
    const [openMonths]:any=await this.db.query(`SELECT * FROM chit_months WHERE chit_id=:id AND UPPER(COALESCE(status,'')) NOT IN ('LOCKED','COMPLETED','CLOSED','CANCELLED') ORDER BY month_number LIMIT 1`,
      {replacements:{id},transaction});
-   if(!openMonths.length)throw new ConflictException('All months are already completed or locked');
-   const first=openMonths[0];
+   if(!openMonths.length)throw new ConflictException('All chit months are already completed or locked');
+   const started=openMonths[0];
    const [updated]:any=await this.db.query(`UPDATE chits SET status='ACTIVE',started_at=COALESCE(started_at,NOW()),updated_at=NOW() WHERE id=:id RETURNING *`,
      {replacements:{id},transaction});
-   return {success:true,data:{...updated[0],startedMonth:first.month_number,startedMonthStatus:first.status,configurationLocked:true}};
+   return {success:true,data:{...updated[0],startedMonth:started.month_number,startedMonthStatus:started.status,configurationLocked:true}};
   });
  }
 }

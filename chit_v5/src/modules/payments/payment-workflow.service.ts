@@ -26,7 +26,9 @@ export class PaymentWorkflowService {
       );
 
       const isCreator = month.creator_id === userId;
-      if (!isCreator && !memberRows.length) {
+      const [agentAccess]: any = await this.sequelize.query(`SELECT 1 FROM chit_agent_assignments ca JOIN agents ag ON ag.id=ca.agent_id WHERE ca.chit_id=:chitId AND ag.user_id=:userId AND ag.status='ACTIVE' AND ca.active=true AND (ca.can_collect_cash=true OR ca.can_verify_payments=true) LIMIT 1`,{replacements:{chitId,userId},transaction});
+      const isAgentOperator=!!agentAccess.length;
+      if (!isCreator && !memberRows.length && !isAgentOperator) {
         throw new ConflictException('You do not have access to this chit');
       }
 
@@ -74,7 +76,7 @@ export class PaymentWorkflowService {
         { replacements: { monthId }, transaction },
       );
 
-      const visible = isCreator
+      const visible = isCreator || isAgentOperator
         ? obligations
         : obligations.filter((o: any) => o.user_id === userId);
 
@@ -97,7 +99,7 @@ export class PaymentWorkflowService {
             outstandingAmount: Number(o.outstanding_amount),
             status: o.status,
             dueDate: o.due_date,
-            userId: isCreator ? o.user_id : undefined,
+            userId: o.user_id,
           })),
           count: visible.length,
           nextStep:
@@ -115,7 +117,8 @@ export class PaymentWorkflowService {
   async listPayments(chitId: string, monthId: string, userId: string) {
     const [access]: any = await this.sequelize.query(
       `SELECT c.creator_id,
-              cp.id AS requester_participant_id
+              cp.id AS requester_participant_id,
+              EXISTS(SELECT 1 FROM chit_agent_assignments ca JOIN agents ag ON ag.id=ca.agent_id WHERE ca.chit_id=c.id AND ag.user_id=:userId AND ag.status='ACTIVE' AND ca.active=true AND (ca.can_collect_cash=true OR ca.can_verify_payments=true)) AS agent_operator
        FROM chits c
        LEFT JOIN chit_participants cp
          ON cp.chit_id=c.id AND cp.user_id=:userId
@@ -126,7 +129,8 @@ export class PaymentWorkflowService {
     if (!access.length) throw new NotFoundException('Chit not found');
 
     const isCreator = access[0].creator_id === userId;
-    if (!isCreator && !access[0].requester_participant_id) {
+    const isAgentOperator = Boolean(access[0].agent_operator);
+    if (!isCreator && !access[0].requester_participant_id && !isAgentOperator) {
       throw new ConflictException('You do not have access to this chit');
     }
 
@@ -158,13 +162,14 @@ export class PaymentWorkflowService {
        JOIN contribution_obligations o ON o.id=p.obligation_id
        WHERE p.chit_id=:chitId
          AND p.chit_month_id=:monthId
-         AND (:isCreator = true OR p.chit_participant_id=:requesterParticipantId)
+         AND (:isCreator = true OR :isAgentOperator = true OR p.chit_participant_id=:requesterParticipantId)
        ORDER BY cp.participant_sequence,p.created_at`,
       {
         replacements: {
           chitId,
           monthId,
           isCreator,
+          isAgentOperator,
           requesterParticipantId: access[0].requester_participant_id,
         },
       },
@@ -336,7 +341,7 @@ export class PaymentWorkflowService {
          LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
          LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:verifier
          WHERE c.id=:chitId
-           AND (c.creator_id=:verifier OR ca.can_verify_payments=true)
+           AND (c.creator_id=:verifier OR (ag.id IS NOT NULL AND ca.can_verify_payments=true))
          LIMIT 1`,
         { replacements: { chitId:p.chit_id, verifier }, transaction },
       );
@@ -448,7 +453,7 @@ export class PaymentWorkflowService {
          LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
          LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:verifier
          WHERE c.id=:chitId
-           AND (c.creator_id=:verifier OR ca.can_verify_payments=true)
+           AND (c.creator_id=:verifier OR (ag.id IS NOT NULL AND ca.can_verify_payments=true))
          FOR UPDATE OF c`,
         { replacements: { chitId, verifier }, transaction },
       );

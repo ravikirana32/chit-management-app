@@ -1,134 +1,14 @@
 import React,{useCallback,useEffect,useState}from'react';
-import{Alert,RefreshControl,ScrollView,Text,View}from'react-native';
-import{router}from'expo-router';
-import{dashboardApi,chitsApi,usersApi,participantsApi,agentApi}from'@/src/api/all';
-import{Button,Card,Loading,Screen,Stat,Badge,s}from'@/src/components/UI';
-import{useAuth}from'@/src/state/Auth';
-import{isAdmin,isAgent,isMember}from'@/src/state/roles';
-import{money,errMsg}from'@/src/lib/format';
+import{Alert,RefreshControl,ScrollView,Text,View}from'react-native';import{router}from'expo-router';
+import{dashboardApi,chitsApi,usersApi,participantsApi,agentApi}from'@/src/api/all';import{Button,Card,Loading,Screen,Stat,Badge,s}from'@/src/components/UI';import{useAuth}from'@/src/state/Auth';import{isAdmin,isAgent,isMember}from'@/src/state/roles';import{money,errMsg}from'@/src/lib/format';
 
 export default function Dashboard(){
- const{user,logout}=useAuth();
- const[busy,setBusy]=useState(true);
- const[chits,setChits]=useState<any[]>([]);
- const[member,setMember]=useState<any[]>([]);
- const[invitations,setInvitations]=useState<any[]>([]);
- const[agentDash,setAgentDash]=useState<any>();
- const[users,setUsers]=useState<any[]>([]);
- const[agents,setAgents]=useState<any[]>([]);
-
- const load=useCallback(async()=>{
-  if(!user)return;
-  setBusy(true);
-  try{
-   if(isAdmin(user)){
-    const[r,a,c]=await Promise.all([usersApi.adminUsers(),usersApi.adminAgents(),chitsApi.list()]);
-    setUsers(r.data?.data??[]);
-    setAgents(a.data?.data??[]);
-    setChits(c.data?.data??[]);
-   }else if(isAgent(user)){
-    const[r,a,c]=await Promise.allSettled([agentApi.myChits(),dashboardApi.agent(),chitsApi.list()]);
-    const specialized=r.status==='fulfilled'?(r.value.data?.data??[]):[];
-    const authoritative=c.status==='fulfilled'?(c.value.data?.data??[]):[];
-    const merged=[...specialized,...authoritative];
-    const seen=new Set<string>();
-    setChits(merged.filter((x:any)=>{
-     const id=String(x.id??x.chit_id??'');
-     if(!id||seen.has(id))return false;
-     seen.add(id);
-     return true;
-    }));
-    if(a.status==='fulfilled')setAgentDash(a.value.data?.data??a.value.data);
-   }else if(isMember(user)){
-    const[r,i]=await Promise.all([dashboardApi.me(),participantsApi.invitations()]);
-    setMember(r.data?.data??r.data??[]);
-    setInvitations(i.data?.data??[]);
-   }
-  }catch(e){
-   Alert.alert('Dashboard error',errMsg(e));
-  }finally{
-   setBusy(false);
-  }
- },[user]);
-
- useEffect(()=>{load()},[load]);
-
- if(!user||busy)return <Screen title="Dashboard"><Loading/></Screen>;
-
- const role=(user.roles||[])[0]||'USER';
- const accept=async(id:string)=>{
-  try{await participantsApi.accept(id);await load()}
-  catch(e){Alert.alert('Accept failed',errMsg(e))}
- };
-
- const adminContent=isAdmin(user)?(
-  <>
-   <View style={s.row}><Stat label="Users" value={users.length}/><Stat label="Agents" value={agents.length}/></View>
-   <View style={s.row}><Stat label="Chits" value={chits.length}/><Stat label="Access" value="ADMIN"/></View>
-   <Button title="Manage Users" onPress={()=>router.push('/admin-users')}/>
-   <Button title="Manage Agents" onPress={()=>router.push('/admin-agents')}/>
-   <Button title="Create Chit" onPress={()=>router.push('/create-chit')}/>
-   <Text style={s.section}>Chits</Text>
-   {chits.map(c=>(
-    <Card key={String(c.id)}>
-     <View style={s.row}><Text style={{fontWeight:'800',flex:1}}>{String(c.name??'Unnamed chit')}</Text><Badge>{String(c.status??'UNKNOWN')}</Badge></View>
-     <Text style={s.muted}>{String(c.chit_type??'')} · {money(c.total_chit_amount)}</Text>
-     <Button title="Open" secondary onPress={()=>router.push({pathname:'/chit-detail',params:{chitId:String(c.id)}})}/>
-    </Card>
-   ))}
-  </>
- ):null;
-
- const agentContent=isAgent(user)?(
-  <>
-   <View style={s.row}><Stat label="Assigned chits" value={agentDash?.summary?.active_chits??chits.length}/><Stat label="Members" value={agentDash?.summary?.members??'—'}/></View>
-   <View style={s.row}><Stat label="Live" value={agentDash?.summary?.live_chits??'—'}/><Stat label="Completed" value={agentDash?.summary?.completed_chits??'—'}/></View>
-   <Button title="Create Chit" onPress={()=>router.push('/create-chit')}/>
-   <Text style={s.section}>My assigned chits</Text>
-   {chits.length===0&&<Card><Text style={s.muted}>No assigned chits yet.</Text></Card>}
-   {chits.map(c=>(
-    <Card key={String(c.id)}>
-     <View style={s.row}><Text style={{fontWeight:'800',flex:1}}>{String(c.name??'Unnamed chit')}</Text><Badge>{String(c.status??'UNKNOWN')}</Badge></View>
-     <Text style={s.muted}>{String(c.chit_type??'')} · {money(c.total_chit_amount)}</Text>
-     <Button title="Open Chit" secondary onPress={()=>router.push({pathname:'/chit-detail',params:{chitId:String(c.id)}})}/>
-     <Button title="Members & Invitations" secondary onPress={()=>router.push({pathname:'/members',params:{chitId:String(c.id)}})}/>
-    </Card>
-   ))}
-  </>
- ):null;
-
- const memberContent=isMember(user)?(
-  <>
-   {invitations.filter(x=>String(x.status||'').toUpperCase()==='INVITED').map(x=>(
-    <Card key={String(x.id)}>
-     <Text style={{fontWeight:'800'}}>Invitation: {String(x.chit_name??x.chitName??'Chit')}</Text>
-     <Text style={s.muted}>You have been invited to join this chit.</Text>
-     <Button title="Accept Invitation" onPress={()=>accept(String(x.id))}/>
-    </Card>
-   ))}
-   <View style={s.row}><Stat label="Participating chits" value={member.length}/><Stat label="Total wins" value={member.reduce((n,x)=>n+Number(x.wins||0),0)}/></View>
-   {member.map(x=>(
-    <Card key={String(x.id)}>
-     <Text style={{fontWeight:'800'}}>{String(x.name??x.chit_name??'Chit')}</Text>
-     <Text style={s.muted}>{String(x.chit_type??'')} · {String(x.participant_status??'')}</Text>
-     <Text>{`Due ${money(x.financial?.total_due)} · Paid ${money(x.financial?.total_paid)}`}</Text>
-     <Badge tone={Number(x.financial?.outstanding||0)>0?'orange':'green'}>{Number(x.financial?.outstanding||0)>0?'Payment pending':'Up to date'}</Badge>
-     <Button title="Open Chit" secondary onPress={()=>router.push({pathname:'/chit-detail',params:{chitId:String(x.chit_id??x.id)}})}/>
-    </Card>
-   ))}
-  </>
- ):null;
-
- return(
-  <Screen title={`${String(role).charAt(0)+String(role).slice(1).toLowerCase()} Dashboard`} subtitle={`${String(user.name??'User')} · ${(user.roles||[]).join(', ')}`}>
-   <ScrollView refreshControl={<RefreshControl refreshing={busy} onRefresh={load}/>}>
-    {adminContent}
-    {agentContent}
-    {memberContent}
-    <Button title="Profile" secondary onPress={()=>router.push('/profile')}/>
-    <Button title="Refresh" secondary onPress={load}/>
-    <Button title="Logout" danger onPress={async()=>{await logout();router.replace('/login')}}/>
-   </ScrollView>
-  </Screen>
- );
+ const{user,logout}=useAuth();const[busy,setBusy]=useState(true);const[chits,setChits]=useState<any[]>([]);const[member,setMember]=useState<any[]>([]);const[invitations,setInvitations]=useState<any[]>([]);const[agentDash,setAgentDash]=useState<any>();const[users,setUsers]=useState<any[]>([]);const[agents,setAgents]=useState<any[]>([]);
+ const load=useCallback(async()=>{if(!user)return;setBusy(true);try{if(isAdmin(user)){const[r,a,c]=await Promise.all([usersApi.adminUsers(),usersApi.adminAgents(),chitsApi.list()]);setUsers(Array.isArray(r.data?.data)?r.data.data:[]);setAgents(Array.isArray(a.data?.data)?a.data.data:[]);setChits(Array.isArray(c.data?.data)?c.data.data:[])}else if(isAgent(user)){const[r,a,c]=await Promise.allSettled([agentApi.myChits(),dashboardApi.agent(),chitsApi.list()]);const specialized=r.status==='fulfilled'&&Array.isArray(r.value.data?.data)?r.value.data.data:[];const authoritative=c.status==='fulfilled'&&Array.isArray(c.value.data?.data)?c.value.data.data:[];const seen=new Set<string>();setChits([...specialized,...authoritative].filter((x:any)=>{const id=String(x.id??x.chit_id??'');if(!id||seen.has(id))return false;seen.add(id);return true}));if(a.status==='fulfilled')setAgentDash(a.value.data?.data??a.value.data)}else if(isMember(user)){const[r,i]=await Promise.all([dashboardApi.me(),participantsApi.invitations()]);const md=r.data?.data??r.data;setMember(Array.isArray(md)?md:[]);setInvitations(Array.isArray(i.data?.data)?i.data.data:[])}}catch(e){Alert.alert('Dashboard error',errMsg(e))}finally{setBusy(false)}},[user]);
+ useEffect(()=>{load()},[load]);if(!user||busy)return <Screen title="Dashboard"><Loading/></Screen>;
+ const role=String((user.roles||[])[0]||'USER');const accept=async(id:string)=>{try{await participantsApi.accept(id);await load()}catch(e){Alert.alert('Accept failed',errMsg(e))}};
+ const adminContent=isAdmin(user)?<><View style={s.row}><Stat label="Users" value={users.length}/><Stat label="Agents" value={agents.length}/></View><View style={s.row}><Stat label="Chits" value={chits.length}/><Stat label="Access" value="ADMIN"/></View><Button title="Manage Users" onPress={()=>router.push('/admin-users')}/><Button title="Manage Agents" onPress={()=>router.push('/admin-agents')}/><Button title="Create Chit" onPress={()=>router.push('/create-chit')}/><Text style={s.section}>Chits</Text>{chits.map(c=><Card key={String(c.id)}><View style={s.row}><Text style={{fontWeight:'800',flex:1}}>{String(c.name??'Unnamed chit')}</Text><Badge>{String(c.status??'UNKNOWN')}</Badge></View><Text style={s.muted}>{`${String(c.chit_type??'')} · ${money(c.total_chit_amount)}`}</Text><Button title="Open" secondary onPress={()=>router.push({pathname:'/chit-detail',params:{chitId:String(c.id)}})}/></Card>)}</>:null;
+ const agentContent=isAgent(user)?<><View style={s.row}><Stat label="Assigned chits" value={agentDash?.summary?.active_chits??chits.length}/><Stat label="Members" value={agentDash?.summary?.members??'—'}/></View><View style={s.row}><Stat label="Live" value={agentDash?.summary?.live_chits??'—'}/><Stat label="Completed" value={agentDash?.summary?.completed_chits??'—'}/></View><Button title="Create Chit" onPress={()=>router.push('/create-chit')}/><Text style={s.section}>My assigned chits</Text>{chits.length===0&&<Card><Text style={s.muted}>No assigned chits yet.</Text></Card>}{chits.map(c=><Card key={String(c.id)}><View style={s.row}><Text style={{fontWeight:'800',flex:1}}>{String(c.name??'Unnamed chit')}</Text><Badge>{String(c.status??'UNKNOWN')}</Badge></View><Text style={s.muted}>{`${String(c.chit_type??'')} · ${money(c.total_chit_amount)}`}</Text><Button title="Open Chit" secondary onPress={()=>router.push({pathname:'/chit-detail',params:{chitId:String(c.id)}})}/><Button title="Members & Invitations" secondary onPress={()=>router.push({pathname:'/members',params:{chitId:String(c.id)}})}/></Card>)}</>:null;
+ const memberContent=isMember(user)?<>{invitations.filter(x=>String(x.status??'').toUpperCase()==='INVITED').map(x=><Card key={String(x.id)}><Text style={{fontWeight:'800'}}>{`Invitation: ${String(x.chit_name??x.chitName??'Chit')}`}</Text><Text style={s.muted}>You have been invited to join this chit.</Text><Button title="Accept Invitation" onPress={()=>accept(String(x.id))}/></Card>)}<View style={s.row}><Stat label="Participating chits" value={member.length}/><Stat label="Total wins" value={member.reduce((n,x)=>n+Number(x.wins||0),0)}/></View>{member.map(x=><Card key={String(x.id)}><Text style={{fontWeight:'800'}}>{String(x.name??x.chit_name??'Chit')}</Text><Text style={s.muted}>{`${String(x.chit_type??'')} · ${String(x.participant_status??'')}`}</Text><Text>{`Due ${money(x.financial?.total_due)} · Paid ${money(x.financial?.total_paid)}`}</Text><Badge tone={Number(x.financial?.outstanding||0)>0?'orange':'green'}>{Number(x.financial?.outstanding||0)>0?'Payment pending':'Up to date'}</Badge><Button title="Open Chit" secondary onPress={()=>router.push({pathname:'/chit-detail',params:{chitId:String(x.chit_id??x.id)}})}/></Card>)}</>:null;
+ return <Screen title={`${role.charAt(0)+role.slice(1).toLowerCase()} Dashboard`} subtitle={`${String(user.name??'User')} · ${(user.roles||[]).join(', ')}`}><ScrollView refreshControl={<RefreshControl refreshing={busy} onRefresh={load}/>} >{adminContent}{agentContent}{memberContent}<Button title="Profile" secondary onPress={()=>router.push('/profile')}/><Button title="Refresh" secondary onPress={load}/><Button title="Logout" danger onPress={async()=>{await logout();router.replace('/login')}}/></ScrollView></Screen>;
 }

@@ -11,10 +11,16 @@ export const authApi={
 export const dashboardApi={
  me:()=>api.get('/v1/dashboard/me'),
  chit:(id:string)=>api.get(`/v1/dashboard/chits/${id}`),
+ operations:(id:string)=>api.get(`/v1/operations/chits/${id}/summary`),
  agent:()=>api.get('/v1/agents/me/dashboard'),
 };
 
 export const usersApi={
+ me:()=>api.get('/v1/users/me'),
+ updateMe:(p:any)=>api.put('/v1/users/me',p),
+ paymentProfile:(p:any)=>api.put('/v1/users/me/payment-profile',p),
+ paymentDetails:()=>api.get('/v1/profile/payment-details'),
+ savePaymentDetails:(p:any)=>api.put('/v1/profile/payment-details',p),
  adminUsers:()=>api.get('/v1/admin/users'),
  createUser:(p:any)=>api.post('/v1/admin/users',p),
  getUser:(id:string)=>api.get(`/v1/admin/users/${id}`),
@@ -45,6 +51,9 @@ export const chitsApi={
  saveSchedule:(id:string,p:any)=>api.put(`/v1/chits/${id}/month-schedule`,p),
  publish:(id:string)=>api.post(`/v1/chits/${id}/publish`),
  start:(id:string)=>api.post(`/v1/chits/${id}/start`),
+ rules:(id:string,p:any)=>api.put(`/v1/chit-rules/chits/${id}`,p),
+ financial:(id:string)=>api.get(`/v1/chits/${id}/financial-summary`),
+ delete:(id:string)=>api.delete(`/v1/admin/chits/${id}`),
 };
 
 export const agentApi={
@@ -55,13 +64,35 @@ export const agentApi={
   return{...r,data:{data:d?.chits??[]}};
  },
  chit:(id:string)=>api.get(`/v1/agents/me/chits/${id}`),
+ assign:(id:string,p:any)=>api.post(`/v1/chits/${id}/agents`,p),
+ update:(id:string,agentId:string,p:any)=>api.put(`/v1/chits/${id}/agents/${agentId}`,p),
 };
 
 export const participantsApi={
  list:(id:string)=>api.get(`/v1/chits/${id}/participants`),
  invite:(id:string,mobile:string)=>api.post(`/v1/chits/${id}/participants/invite`,{mobile}),
+ remove:(chitId:string,participantId:string)=>api.delete(`/v1/admin/chits/${chitId}/participants/${participantId}`),
  invitations:()=>api.get('/v1/invitations/me'),
  accept:(id:string)=>api.post(`/v1/invitations/${id}/accept`),
+};
+
+export const paymentsApi={
+ obligations:(c:string,m:string)=>api.get(`/v1/payments/chits/${c}/months/${m}/obligations`),
+ list:(c:string,m:string)=>api.get(`/v1/payments/chits/${c}/months/${m}`),
+ submit:(c:string,p:string,payload:any)=>api.post(`/v1/payments/chits/${c}/participants/${p}/submit`,payload,{headers:{'Idempotency-Key':payload.idempotencyKey}}),
+ verify:(id:string,p:any)=>api.post(`/v1/payments/${id}/verify`,p),
+ verifyAll:(c:string,m:string,p:any)=>api.post(`/v1/payments/chits/${c}/months/${m}/verify-all`,p),
+ recordCash:(o:string,p:any)=>api.post(`/v1/payment-collection/obligations/${o}/record-cash`,p),
+ proof:(id:string,p:any)=>api.post(`/v1/payments/${id}/proof`,p),
+ dispute:(id:string,p:any)=>api.post(`/v1/payments/${id}/dispute`,p),
+};
+
+export const drawsApi={
+ start:(c:string,p:any)=>api.post(`/v1/draws/chits/${c}/start`,p),
+ get:(c:string,m:string)=>api.get(`/v1/draws/chits/${c}/months/${m}`),
+ interest:(c:string,m:string,v:boolean)=>api.post(`/v1/draws/chits/${c}/months/${m}/interest`,{interested:v}),
+ run:(c:string,m:string)=>api.post(`/v1/draws/chits/${c}/months/${m}/run`),
+ agentPayout:(c:string,m:string)=>api.post(`/v1/draws/chits/${c}/months/${m}/agent-payout`),
 };
 
 export const auctionsApi={
@@ -76,9 +107,29 @@ export const auctionsApi={
  savings:(c:string)=>api.get(`/v1/auctions/chits/${c}/savings`),
 };
 
-export const drawsApi={
- start:(c:string,p:any)=>api.post(`/v1/draws/chits/${c}/start`,p),
- get:(c:string,m:string)=>api.get(`/v1/draws/chits/${c}/months/${m}`),
- interest:(c:string,m:string,v:boolean)=>api.post(`/v1/draws/chits/${c}/months/${m}/interest`,{interested:v}),
- run:(c:string,m:string)=>api.post(`/v1/draws/chits/${c}/months/${m}/run`),
+export const payoutsApi={
+ list:(c:string)=>api.get(`/v1/payouts/chits/${c}`),
+ settle:(id:string,p:any)=>api.post(`/v1/payouts/${id}/settle`,p),
+};
+
+export const ledgerApi={
+ me:(c:string,p:string)=>api.get(`/v1/ledger/chits/${c}/me/${p}`),
+ all:(c:string)=>api.get(`/v1/ledger/chits/${c}`),
+ adjust:(c:string,p:any)=>api.post(`/v1/ledger/chits/${c}/adjustments`,p),
+};
+
+export const closeApi={month:(m:string)=>api.post(`/v1/month-close/months/${m}`)};
+export const collectionsApi={overdue:(c:string)=>api.get(`/v1/collections/chits/${c}/overdue`)};
+export const winnersApi={fixed:(c:string)=>api.get(`/v1/draws/chits/${c}/winners`),auction:(c:string)=>api.get(`/v1/auctions/chits/${c}/winners`)};
+export const notificationsApi={
+ list:(c:string)=>api.get(`/v1/chits/${c}/chat/notifications`),
+ read:(c:string,id:string)=>api.post(`/v1/chits/${c}/chat/notifications/${id}/read`,{}),
+ preferences:()=>api.get('/v1/notifications/preferences'),
+ savePreferences:(p:any)=>api.put('/v1/notifications/preferences',p),
+};
+export const reconciliationApi={
+ summary:(c:string)=>api.get(`/v1/reconciliation/chits/${c}`),
+ monthly:(c:string,m:string)=>api.get(`/v1/reconciliation/chits/${c}/months/${m}`),
+ members:(c:string)=>api.get(`/v1/reconciliation/chits/${c}/members`),
+ final:(c:string)=>api.get(`/v1/reconciliation/chits/${c}/final`),
 };

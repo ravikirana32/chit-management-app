@@ -12,7 +12,7 @@ export class ReconciliationService {
        LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
        LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:userId
        WHERE c.id=:chitId
-         AND (c.creator_id=:userId OR ca.can_manage_chit=true OR ca.can_collect_cash=true OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
+         AND (c.creator_id=:userId OR (ag.id IS NOT NULL AND (ca.can_manage_chit=true OR ca.can_collect_cash=true)) OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
        LIMIT 1`,
       {replacements:{chitId,userId}});
     if(!access.length) throw new ConflictException('Reconciliation permission is required for this chit');
@@ -37,7 +37,7 @@ export class ReconciliationService {
        LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
        LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:userId
        WHERE c.id=:chitId AND
-         (c.creator_id=:userId OR ca.can_manage_chit=true OR ca.can_collect_cash=true OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
+         (c.creator_id=:userId OR (ag.id IS NOT NULL AND (ca.can_manage_chit=true OR ca.can_collect_cash=true)) OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
        LIMIT 1`,
       {replacements:{chitId,userId}});
     if(!access.length) throw new ConflictException('Reconciliation permission is required for this chit');
@@ -74,7 +74,7 @@ export class ReconciliationService {
        LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
        LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:userId
        WHERE c.id=:chitId
-         AND (c.creator_id=:userId OR ca.can_manage_chit=true OR ca.can_collect_cash=true OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
+         AND (c.creator_id=:userId OR (ag.id IS NOT NULL AND (ca.can_manage_chit=true OR ca.can_collect_cash=true)) OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
        LIMIT 1`,{replacements:{chitId,userId}});
     if(!chit.length) throw new NotFoundException('Chit not found');
     const [months]:any=await this.sequelize.query(`SELECT COUNT(*)::int total,COUNT(*) FILTER(WHERE status='LOCKED')::int locked FROM chit_months WHERE chit_id=:chitId`,{replacements:{chitId}});

@@ -7,11 +7,7 @@ import { OperationSchedulePolicyService } from '../../common/enterprise-hardenin
 
 @Injectable()
 export class AuctionService {
-  constructor(
-    private readonly sequelize: Sequelize,
-    private readonly gateway: AuctionGateway,
-    private readonly schedulePolicy: OperationSchedulePolicyService,
-  ) {}
+  constructor(private readonly sequelize: Sequelize, private readonly gateway: AuctionGateway, private readonly schedulePolicy: OperationSchedulePolicyService) {}
 
   private async canRunAuction(chitId: string, userId: string, transaction?: any) {
     const [creator]: any = await this.sequelize.query(
@@ -111,7 +107,7 @@ export class AuctionService {
       const [rows]: any = await this.sequelize.query(
         `SELECT a.*,m.scheduled_date,m.chit_id,c.timezone
          FROM auctions a LEFT JOIN chit_months m ON m.id=a.chit_month_id
-         JOIN chits c ON c.id=a.chit_id WHERE a.id=:auctionId FOR UPDATE`,
+         JOIN chits c ON c.id=a.chit_id WHERE a.id=:auctionId FOR UPDATE OF a,c`,
         { replacements: { auctionId }, transaction },
       );
       if (!rows.length) throw new NotFoundException('Auction not found');
@@ -144,7 +140,7 @@ export class AuctionService {
       const [rows]: any = await this.sequelize.query(
         `SELECT a.*,m.scheduled_date,m.chit_id AS month_chit_id,c.timezone
          FROM auctions a LEFT JOIN chit_months m ON m.id=a.chit_month_id
-         JOIN chits c ON c.id=a.chit_id WHERE a.id=:auctionId FOR UPDATE`,
+         JOIN chits c ON c.id=a.chit_id WHERE a.id=:auctionId FOR UPDATE OF a,c`,
         { replacements: { auctionId }, transaction },
       );
       if (!rows.length) throw new NotFoundException('Auction not found');
@@ -201,7 +197,16 @@ export class AuctionService {
   }
 
   async current(chitId: string, monthId: string, userId: string) {
-    await this.assertCanRunAuction(chitId, userId);
+    const [access]:any=await this.sequelize.query(`
+      SELECT 1
+      FROM chits c
+      LEFT JOIN chit_participants cp ON cp.chit_id=c.id AND cp.user_id=:userId
+      LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
+      LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:userId
+      WHERE c.id=:chitId
+        AND (c.creator_id=:userId OR cp.id IS NOT NULL OR (ag.id IS NOT NULL AND (ca.can_run_auction=true OR ca.can_view_members=true)) OR EXISTS(SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
+      LIMIT 1`,{replacements:{chitId,userId}});
+    if(!access.length)throw new ConflictException('Auction access is required for this chit');
     const [rows]: any = await this.sequelize.query(
       `SELECT a.id,a.status,a.auction_type,a.starts_at,a.ends_at,a.funding_amount,
               a.winning_bid_amount,a.discount_amount,a.payout_amount,
@@ -229,7 +234,7 @@ export class AuctionService {
       const [auctions]:any=await this.sequelize.query(
         `SELECT a.*,COALESCE(a.funding_amount,m.scheduled_amount) AS auction_amount,m.status AS month_status
          FROM auctions a LEFT JOIN chit_months m ON m.id=a.chit_month_id
-         WHERE a.id=:auctionId FOR UPDATE`,{replacements:{auctionId},transaction});
+         WHERE a.id=:auctionId FOR UPDATE OF a,c`,{replacements:{auctionId},transaction});
       if(!auctions.length)throw new NotFoundException('Auction not found'); const auction=auctions[0];
       if(auction.status!=='OPEN')throw new ConflictException('Auction is not open');
       if(new Date(auction.ends_at).getTime()<=Date.now())throw new ConflictException('Auction bidding window has closed');
@@ -248,7 +253,7 @@ export class AuctionService {
 
   async finalize(auctionId:string,actorUserId:string){
     return this.sequelize.transaction(async transaction=>{
-      const [rows]:any=await this.sequelize.query(`SELECT a.*,COALESCE(a.funding_amount,m.scheduled_amount) AS auction_amount,m.scheduled_amount,m.chit_id AS month_chit_id,c.creator_id,c.total_chit_amount,c.accumulated_savings_amount,c.total_months,c.completed_months FROM auctions a LEFT JOIN chit_months m ON m.id=a.chit_month_id JOIN chits c ON c.id=a.chit_id WHERE a.id=:auctionId FOR UPDATE`,{replacements:{auctionId},transaction});
+      const [rows]:any=await this.sequelize.query(`SELECT a.*,COALESCE(a.funding_amount,m.scheduled_amount) AS auction_amount,m.scheduled_amount,m.chit_id AS month_chit_id,c.creator_id,c.total_chit_amount,c.accumulated_savings_amount,c.total_months,c.completed_months FROM auctions a LEFT JOIN chit_months m ON m.id=a.chit_month_id JOIN chits c ON c.id=a.chit_id WHERE a.id=:auctionId FOR UPDATE OF a,c`,{replacements:{auctionId},transaction});
       if(!rows.length)throw new NotFoundException('Auction not found'); const a=rows[0]; await this.assertCanRunAuction(a.chit_id,actorUserId,transaction);
       if(a.status==='COMPLETED')throw new ConflictException('Auction is already finalized');
       if(!['OPEN','CLOSED_PENDING_FINALIZATION'].includes(a.status))throw new ConflictException('Auction is not ready for finalization');
@@ -267,7 +272,7 @@ export class AuctionService {
         const face=Number(a.total_chit_amount);
         if(savingsBefore<face)throw new ConflictException('Savings are below the chit total amount');
       }
-      const savingsAfter=savingsBefore;
+      const projectedSavingsAfterSettlement=isAdditional ? savingsBefore-payoutAmount+discount : savingsBefore+discount;
       const [winnerRows]:any=await this.sequelize.query(`INSERT INTO auction_winners(id,auction_id,chit_participant_id,winning_bid_id,winning_bid_amount,selected_at,created_at,updated_at) VALUES(gen_random_uuid(),:auctionId,:pid,:bidId,:amount,NOW(),NOW(),NOW()) RETURNING *`,{replacements:{auctionId,pid:winner.chit_participant_id,bidId:winner.id,amount:discount},transaction});
       const [payoutRows]:any=await this.sequelize.query(`INSERT INTO payouts(id,chit_id,chit_month_id,recipient_user_id,amount,payment_method,status,recorded_by,notes,created_at,updated_at) VALUES(gen_random_uuid(),:chitId,:monthId,:userId,:amount,'UPI','PENDING',:actor,:notes,NOW(),NOW()) RETURNING *`,{replacements:{chitId:a.chit_id,monthId:a.chit_month_id??null,userId:winner.user_id,amount:payoutAmount,actor:actorUserId,notes:isAdditional?'Additional auction payout from chit savings':`Auction discount: ₹${discount.toFixed(2)}`},transaction});
       await this.sequelize.query(`UPDATE bids SET status=CASE WHEN id=:winnerId THEN 'WINNING' ELSE 'NON_WINNING' END,updated_at=NOW() WHERE auction_id=:auctionId AND status='VALID'`,{replacements:{winnerId:winner.id,auctionId},transaction});
@@ -275,11 +280,20 @@ export class AuctionService {
       if(a.chit_month_id){
         await this.sequelize.query(`UPDATE chit_months SET status='COMPLETED',updated_at=NOW() WHERE id=:monthId`,{replacements:{monthId:a.chit_month_id},transaction});
       }
+      if(a.chit_month_id){
+        await this.sequelize.query(`
+          UPDATE chits
+          SET completed_months=(SELECT COUNT(*) FROM chit_months WHERE chit_id=:chitId AND status='COMPLETED'),
+              status=CASE WHEN (SELECT COUNT(*) FROM chit_months WHERE chit_id=:chitId AND status='COMPLETED')>=total_months THEN 'COMPLETED' ELSE status END,
+              completed_at=CASE WHEN (SELECT COUNT(*) FROM chit_months WHERE chit_id=:chitId AND status='COMPLETED')>=total_months THEN COALESCE(completed_at,NOW()) ELSE completed_at END,
+              updated_at=NOW()
+          WHERE id=:chitId`,{replacements:{chitId:a.chit_id},transaction});
+      }
       // Financial savings transaction is deliberately deferred to payout settlement.
       // This keeps collections, payout and savings atomic even when members pay later.
-      await this.audit(auctionId,a.chit_id,actorUserId,'AUCTION_COMPLETED',{winnerParticipantId:winner.chit_participant_id,winningBid:discount,scheduledAmount:pot,payoutAmount,bidCount:bids.length,isAdditional,savingsBefore,savingsAfter},transaction);
-      this.gateway.emitClosed(auctionId,{auctionId,winnerParticipantId:winner.chit_participant_id,winningBid:discount,payoutAmount,savingsAfter});
-      return {auctionId,winnerParticipantId:winner.chit_participant_id,winningBid:discount,scheduledAmount:pot,payoutAmount,bidCount:bids.length,isAdditional,savingsBefore,savingsAfter,remainingMonths:Math.max(0,Number(a.total_months)-Number(a.completed_months||0)-1),rule:'Winner remains active and continues future contributions.',winner:winnerRows[0],payout:payoutRows[0]};
+      await this.audit(auctionId,a.chit_id,actorUserId,'AUCTION_COMPLETED',{winnerParticipantId:winner.chit_participant_id,winningBid:discount,scheduledAmount:pot,payoutAmount,bidCount:bids.length,isAdditional,savingsBefore,projectedSavingsAfterSettlement,financialSettlementDeferred:true},transaction);
+      this.gateway.emitClosed(auctionId,{auctionId,winnerParticipantId:winner.chit_participant_id,winningBid:discount,payoutAmount,projectedSavingsAfterSettlement,financialSettlementDeferred:true});
+      return {auctionId,winnerParticipantId:winner.chit_participant_id,winningBid:discount,scheduledAmount:pot,payoutAmount,bidCount:bids.length,isAdditional,savingsBefore,projectedSavingsAfterSettlement,financialSettlementDeferred:true,remainingMonths:Math.max(0,Number(a.total_months)-Number(a.completed_months||0)-1),rule:'Winner remains active and continues future contributions.',winner:winnerRows[0],payout:payoutRows[0]};
     });
   }
 
