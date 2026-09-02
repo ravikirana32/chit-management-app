@@ -26,20 +26,24 @@ class ChitsController {
   const agentMonths=[...(dto.agentMonthNumbers??[])];
   const bad=agentMonths.some(n=>n<1||n>dto.totalMonths)||new Set(agentMonths).size!==agentMonths.length;
   if(bad)throw new BadRequestException('Invalid agent month numbers');
-  if(agentMonths.length&&!dto.agentId)throw new BadRequestException('agentId is required when AGENT_CHIT months are configured');
   const totalChitAmount=Number(dto.totalChitAmount??(amounts[0]*dto.totalMembers));
   if(!Number.isFinite(totalChitAmount)||totalChitAmount<=0)throw new BadRequestException('totalChitAmount must be positive');
+  const normalizedPayoutAmounts=payoutAmounts.map((x:number,i:number)=>agentMonths.includes(i+1)?totalChitAmount:x);
   let resolvedAgentId: string | null = null;
   return this.db.transaction(async transaction=>{
    const [creatorAgent]: any = await this.db.query(`SELECT id FROM agents WHERE user_id=:user AND status='ACTIVE' LIMIT 1`,{replacements:{user:user.sub},transaction});
    if (creatorAgent.length) resolvedAgentId = creatorAgent[0].id;
    if(agentMonths.length){
-    const [agentRows]: any = await this.db.query(`
-      SELECT id, user_id, name, status FROM agents
-      WHERE (id = :agentId OR user_id = :agentId) AND status = 'ACTIVE' LIMIT 1`,
-      {replacements:{agentId:dto.agentId},transaction});
-    if(!agentRows.length)throw new NotFoundException('Configured agent not found');
-    resolvedAgentId=agentRows[0].id;
+    if(dto.agentId){
+      const [agentRows]: any = await this.db.query(`
+        SELECT id, user_id, name, status FROM agents
+        WHERE (id = :agentId OR user_id = :agentId) AND status = 'ACTIVE' LIMIT 1`,
+        {replacements:{agentId:dto.agentId},transaction});
+      if(!agentRows.length)throw new NotFoundException('Configured agent not found');
+      resolvedAgentId=agentRows[0].id;
+    } else if(!resolvedAgentId){
+      throw new BadRequestException('An active agent is required when AGENT_CHIT months are configured');
+    }
    }
    const [chits]:any=await this.db.query(`
      INSERT INTO chits
@@ -69,7 +73,7 @@ class ChitsController {
       (id,chit_id,month_number,scheduled_date,scheduled_amount,winner_payout_amount,month_type,status,agent_id,created_at,updated_at)
       VALUES(gen_random_uuid(),:chit,:number,:date,:amount,:payout,:type,'SCHEDULED',:agent,NOW(),NOW())`,
       {replacements:{chit:chit.id,number:month,date:dt.toISOString().slice(0,10),amount:amounts[i],
-        payout:payoutAmounts[i],type:agentMonths.includes(month)?'AGENT_CHIT':'ACTION',
+        payout:normalizedPayoutAmounts[i],type:agentMonths.includes(month)?'AGENT_CHIT':'ACTION',
         agent:agentMonths.includes(month)?resolvedAgentId:null},transaction});
    }
    const [months]:any=await this.db.query(`SELECT * FROM chit_months WHERE chit_id=:id ORDER BY month_number`,{replacements:{id:chit.id},transaction});
@@ -82,7 +86,7 @@ class ChitsController {
     LEFT JOIN chit_participants cp ON cp.chit_id=c.id AND cp.user_id=:user
     LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
     LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:user
-    WHERE c.status<>'DELETED' AND (c.creator_id=:user OR cp.id IS NOT NULL OR ag.id IS NOT NULL OR EXISTS(SELECT 1 FROM user_roles ur WHERE ur.user_id=:user AND ur.role='ADMIN')) ORDER BY c.created_at DESC`,
+    WHERE c.creator_id=:user OR cp.id IS NOT NULL OR ag.id IS NOT NULL ORDER BY c.created_at DESC`,
     {replacements:{user:user.sub}});
   return {success:true,data:rows};
  }
@@ -93,7 +97,7 @@ class ChitsController {
     LEFT JOIN chit_participants cp ON cp.chit_id=c.id AND cp.user_id=:user
     LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
     LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:user
-    WHERE c.id=:id AND c.status<>'DELETED' AND (c.creator_id=:user OR cp.id IS NOT NULL OR ag.id IS NOT NULL OR EXISTS(SELECT 1 FROM user_roles ur WHERE ur.user_id=:user AND ur.role='ADMIN'))`,
+    WHERE c.id=:id AND (c.creator_id=:user OR cp.id IS NOT NULL OR ag.id IS NOT NULL)`,
     {replacements:{id,user:user.sub}});
   if(!rows.length)throw new NotFoundException('Chit not found');
   const [months]:any=await this.db.query(`SELECT cm.*,
@@ -111,7 +115,7 @@ class ChitsController {
   const [rows]:any=await this.db.query(`SELECT DISTINCT c.* FROM chits c
     LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
     LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:user
-    WHERE c.id=:id AND (c.creator_id=:user OR (ag.id IS NOT NULL AND ca.can_manage_chit=true) OR EXISTS(SELECT 1 FROM user_roles ur WHERE ur.user_id=:user AND ur.role='ADMIN'))`,{replacements:{id,user:user.sub}});
+    WHERE c.id=:id AND (c.creator_id=:user OR ca.can_manage_chit=true)`,{replacements:{id,user:user.sub}});
   if(!rows.length)throw new NotFoundException('Chit not found');
   const chit=rows[0];
   const [months]:any=await this.db.query(`SELECT cm.*,
@@ -207,13 +211,13 @@ class ChitsController {
    const c=rows[0];
    if(c.status==='ACTIVE')return {success:true,data:{...c,configurationLocked:true}};
    if(c.status!=='READY_TO_START')throw new ConflictException(`Chit cannot be started in its current state: ${c.status}`);
-   const [openMonths]:any=await this.db.query(`SELECT * FROM chit_months WHERE chit_id=:id AND UPPER(COALESCE(status,'')) NOT IN ('LOCKED','COMPLETED','CLOSED','CANCELLED') ORDER BY month_number LIMIT 1`,
+   const [first]:any=await this.db.query(`SELECT * FROM chit_months WHERE chit_id=:id ORDER BY month_number LIMIT 1`,
      {replacements:{id},transaction});
-   if(!openMonths.length)throw new ConflictException('All chit months are already completed or locked');
-   const started=openMonths[0];
-   const [updated]:any=await this.db.query(`UPDATE chits SET status='ACTIVE',started_at=COALESCE(started_at,NOW()),updated_at=NOW() WHERE id=:id RETURNING *`,
+   if(!first.length)throw new ConflictException('Chit has no monthly schedule');
+   if(first[0].status==='LOCKED'||first[0].status==='COMPLETED')throw new ConflictException('First month is already completed or locked');
+   const [updated]:any=await this.db.query(`UPDATE chits SET status='ACTIVE',updated_at=NOW() WHERE id=:id RETURNING *`,
      {replacements:{id},transaction});
-   return {success:true,data:{...updated[0],startedMonth:started.month_number,startedMonthStatus:started.status,configurationLocked:true}};
+   return {success:true,data:{...updated[0],startedMonth:first[0].month_number,configurationLocked:true}};
   });
  }
 }
