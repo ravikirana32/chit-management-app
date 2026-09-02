@@ -207,13 +207,13 @@ class ChitsController {
    const c=rows[0];
    if(c.status==='ACTIVE')return {success:true,data:{...c,configurationLocked:true}};
    if(c.status!=='READY_TO_START')throw new ConflictException(`Chit cannot be started in its current state: ${c.status}`);
-   const [first]:any=await this.db.query(`SELECT * FROM chit_months WHERE chit_id=:id ORDER BY month_number LIMIT 1`,
+   const [openMonths]:any=await this.db.query(`SELECT * FROM chit_months WHERE chit_id=:id AND UPPER(COALESCE(status,'')) NOT IN ('LOCKED','COMPLETED','CLOSED','CANCELLED') ORDER BY month_number LIMIT 1`,
      {replacements:{id},transaction});
-   if(!first.length)throw new ConflictException('Chit has no monthly schedule');
-   if(first[0].status==='LOCKED'||first[0].status==='COMPLETED')throw new ConflictException('First month is already completed or locked');
-   const [updated]:any=await this.db.query(`UPDATE chits SET status='ACTIVE',updated_at=NOW() WHERE id=:id RETURNING *`,
+   if(!openMonths.length)throw new ConflictException('All months are already completed or locked');
+   const first=openMonths[0];
+   const [updated]:any=await this.db.query(`UPDATE chits SET status='ACTIVE',started_at=COALESCE(started_at,NOW()),updated_at=NOW() WHERE id=:id RETURNING *`,
      {replacements:{id},transaction});
-   return {success:true,data:{...updated[0],startedMonth:first[0].month_number,configurationLocked:true}};
+   return {success:true,data:{...updated[0],startedMonth:first.month_number,startedMonthStatus:first.status,configurationLocked:true}};
   });
  }
 }
