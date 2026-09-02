@@ -18,7 +18,7 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
    * - Funds are checked when the payout is SETTLED, not when the winner is selected.
    * - Savings are updated only after settlement, using verified collections + opening savings - payout.
    */
-  async runDraw(chitId: string, monthId: string, actorUserId: string) {
+  async runDraw(chitId: string, monthId: string, actorUserId: string): Promise<any> {
     return this.db.transaction(async transaction => {
       const [monthRows]: any = await this.db.query(
         `SELECT m.*, c.creator_id, c.status AS chit_status, c.chit_type,
