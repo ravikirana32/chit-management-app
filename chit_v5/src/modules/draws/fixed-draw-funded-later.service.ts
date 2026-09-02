@@ -8,7 +8,6 @@ import { OperationSchedulePolicyService } from '../../common/enterprise-hardenin
 export class FixedDrawFundedLaterService extends FixedDrawService {
   constructor(private readonly db: Sequelize, schedulePolicy: OperationSchedulePolicyService) {
     super(db, schedulePolicy);
-    super(db);
   }
 
   /**

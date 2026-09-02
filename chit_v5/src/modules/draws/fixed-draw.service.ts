@@ -18,7 +18,7 @@ export class FixedDrawService {
     scheduledDate: string,
     _transaction: any,
   ): Promise<boolean> {
-    const tz = this.config?.get?.('APP_TIMEZONE') || 'Asia/Kolkata';
+    const tz = process.env.APP_TIMEZONE || 'Asia/Kolkata';
     const formatter = new Intl.DateTimeFormat('en-CA', {
       timeZone: tz,
       year: 'numeric',
