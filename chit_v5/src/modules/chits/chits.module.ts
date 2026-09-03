@@ -98,8 +98,33 @@ class ChitsController {
   if(!rows.length)throw new NotFoundException('Chit not found');
   const [months]:any=await this.db.query(`SELECT cm.*,
     COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.chit_month_id=cm.id
-      AND p.status IN ('VERIFIED','PAID','SETTLED','COMPLETED')),0) AS verified_collections
-    FROM chit_months cm WHERE cm.chit_id=:id ORDER BY cm.month_number`,{replacements:{id}});
+      AND p.status IN ('VERIFIED','PAID','SETTLED','COMPLETED')),0) AS verified_collections,
+    cm.locked_at,cm.locked_by,
+    a.id AS auction_id,a.status AS auction_status,a.completed_at AS auction_completed_at,
+    a.winning_bid_amount,a.discount_amount AS auction_discount_amount,a.payout_amount AS auction_payout_amount,
+    dw.id AS draw_winner_id,dw.chit_participant_id AS draw_winner_participant_id,
+    aw.id AS auction_winner_id,aw.chit_participant_id AS auction_winner_participant_id,
+    wp.participant_sequence AS winner_sequence,wu.name AS winner_name,wu.mobile_number AS winner_mobile,
+    COALESCE(aw.winning_bid_amount,a.winning_bid_amount) AS winning_bid,
+    COALESCE(a.discount_amount,0) AS discount_amount,
+    COALESCE(a.payout_amount,cm.winner_payout_amount) AS final_payout_amount,
+    COALESCE(dp.id,ap.id,gp.id) AS payout_id,
+    COALESCE(dp.status,ap.status,gp.status) AS payout_status,
+    COALESCE(dp.payment_method,ap.payment_method,gp.payment_method) AS payout_payment_method,
+    COALESCE(dp.transaction_reference,ap.transaction_reference,gp.transaction_reference) AS payout_transaction_reference,
+    COALESCE(dp.paid_at,ap.paid_at,gp.paid_at) AS payout_paid_at,
+    ag.id AS agent_id,ag.name AS agent_name,ag.upi_id AS agent_upi_id,ag.status AS agent_status
+    FROM chit_months cm
+    LEFT JOIN auctions a ON a.chit_month_id=cm.id
+    LEFT JOIN auction_winners aw ON aw.auction_id=a.id
+    LEFT JOIN draw_winners dw ON dw.draw_id=(SELECT d.id FROM draws d WHERE d.chit_month_id=cm.id ORDER BY d.created_at DESC LIMIT 1)
+    LEFT JOIN chit_participants wp ON wp.id=COALESCE(aw.chit_participant_id,dw.chit_participant_id)
+    LEFT JOIN users wu ON wu.id=wp.user_id
+    LEFT JOIN LATERAL (SELECT p.* FROM payouts p WHERE p.chit_month_id=cm.id AND p.notes LIKE 'Fixed Draw winner payout%' ORDER BY p.updated_at DESC NULLS LAST,p.created_at DESC LIMIT 1) dp ON TRUE
+    LEFT JOIN LATERAL (SELECT p.* FROM payouts p WHERE p.chit_month_id=cm.id AND (p.notes LIKE 'Auction discount:%' OR p.notes LIKE 'Additional auction payout%') ORDER BY p.updated_at DESC NULLS LAST,p.created_at DESC LIMIT 1) ap ON TRUE
+    LEFT JOIN LATERAL (SELECT p.* FROM payouts p WHERE p.chit_month_id=cm.id AND (p.notes LIKE 'AGENT_CHIT:%' OR p.recipient_agent_id=cm.agent_id) ORDER BY p.updated_at DESC NULLS LAST,p.created_at DESC LIMIT 1) gp ON TRUE
+    LEFT JOIN agents ag ON ag.id=cm.agent_id
+    WHERE cm.chit_id=:id ORDER BY cm.month_number`,{replacements:{id}});
   const chit=rows[0]; const currentSavings=Number(chit.accumulated_savings_amount||0);
   return {success:true,data:{...chit,currentSavings,savingsDisplay:`₹${currentSavings.toFixed(2)}`,
     months,remainingMonths:Math.max(0,Number(chit.total_months)-Number(chit.completed_months||0)),
