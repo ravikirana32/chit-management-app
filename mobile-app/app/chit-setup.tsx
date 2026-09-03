@@ -26,7 +26,7 @@ export default function ChitSetup(){
      <Select label="Type" value={m.month_type} options={[{label:'ACTION',value:'ACTION'},{label:'AGENT CHIT',value:'AGENT_CHIT'}]} onChange={v=>{if(editable)update(i,'month_type',v);if(v==='AGENT_CHIT'&&!m.agent_id&&isAgent(user))update(i,'agent_id',user.id)}}/>
      <Input label="Scheduled date" value={String(m.scheduled_date)} onChangeText={v=>editable&&update(i,'scheduled_date',v)} editable={editable}/>
      <Input label="Contribution/member" value={String(m.scheduled_amount)} onChangeText={v=>editable&&update(i,'scheduled_amount',v)} keyboardType="decimal-pad" editable={editable}/>
-     <Input label="Payout" value={String(m.winner_payout_amount)} onChangeText={v=>editable&&update(i,'winner_payout_amount',v)} keyboardType="decimal-pad" editable={editable}/>
+     <Input label={m.month_type==='AGENT_CHIT'?'Agent payout (full chit amount)':'Payout'} value={m.month_type==='AGENT_CHIT'?String(chit.total_chit_amount):String(m.winner_payout_amount)} onChangeText={v=>editable&&m.month_type!=='AGENT_CHIT'&&update(i,'winner_payout_amount',v)} keyboardType="decimal-pad" editable={editable&&m.month_type!=='AGENT_CHIT'}/>
      {m.month_type==='AGENT_CHIT'&&(isAdmin(user)?<Select label="Agent" value={m.agent_id||''} options={agents.filter((a:any)=>a.status==='ACTIVE').map((a:any)=>({label:`${a.name} · ${a.mobile}`,value:a.id}))} onChange={v=>editable&&update(i,'agent_id',v)} placeholder="Select active agent"/>:<Text style={s.muted}>Agent: {m.agent_id||user?.id||'Configured agent'}</Text>)}
    </Card>)}
    {editable&&<><Button title="Save Schedule" onPress={save} disabled={busy}/><Button title="Publish Chit" onPress={publish} disabled={busy}/></>}

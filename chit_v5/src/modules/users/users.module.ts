@@ -46,6 +46,12 @@ class UsersController{
   return {success:true,data:{...rows[0],roles:roles.map((r:any)=>r.role)}};
  }
 
+ @Get('me/payment-profile')
+ async paymentDetails(@CurrentUser() user:any){
+  const [rows]:any=await this.db.query(`SELECT upi_id,bank_name,account_number,ifsc,cash_accepted FROM user_payment_profiles WHERE user_id=:user LIMIT 1`,{replacements:{user:user.sub}});
+  return {success:true,data:rows[0]??{upi_id:null,bank_name:null,account_number:null,ifsc:null,cash_accepted:false}};
+ }
+
  @Put('me/payment-profile')
  async paymentProfile(@Body() dto:PaymentProfileDto,@CurrentUser() user:any){
   const [rows]:any=await this.db.query(

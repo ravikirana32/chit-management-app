@@ -28,22 +28,17 @@ class ChitsController {
   if(bad)throw new BadRequestException('Invalid agent month numbers');
   const totalChitAmount=Number(dto.totalChitAmount??(amounts[0]*dto.totalMembers));
   if(!Number.isFinite(totalChitAmount)||totalChitAmount<=0)throw new BadRequestException('totalChitAmount must be positive');
-  const normalizedPayoutAmounts=payoutAmounts.map((x:number,i:number)=>agentMonths.includes(i+1)?totalChitAmount:x);
   let resolvedAgentId: string | null = null;
   return this.db.transaction(async transaction=>{
    const [creatorAgent]: any = await this.db.query(`SELECT id FROM agents WHERE user_id=:user AND status='ACTIVE' LIMIT 1`,{replacements:{user:user.sub},transaction});
    if (creatorAgent.length) resolvedAgentId = creatorAgent[0].id;
    if(agentMonths.length){
-    if(dto.agentId){
-      const [agentRows]: any = await this.db.query(`
-        SELECT id, user_id, name, status FROM agents
-        WHERE (id = :agentId OR user_id = :agentId) AND status = 'ACTIVE' LIMIT 1`,
-        {replacements:{agentId:dto.agentId},transaction});
-      if(!agentRows.length)throw new NotFoundException('Configured agent not found');
-      resolvedAgentId=agentRows[0].id;
-    } else if(!resolvedAgentId){
-      throw new BadRequestException('An active agent is required when AGENT_CHIT months are configured');
-    }
+    const [agentRows]: any = await this.db.query(`
+      SELECT id, user_id, name, status FROM agents
+      WHERE (id = :agentId OR user_id = :agentId) AND status = 'ACTIVE' LIMIT 1`,
+      {replacements:{agentId:dto.agentId},transaction});
+    if(!agentRows.length)throw new NotFoundException('Configured agent not found');
+    resolvedAgentId=agentRows[0].id;
    }
    const [chits]:any=await this.db.query(`
      INSERT INTO chits
@@ -73,7 +68,7 @@ class ChitsController {
       (id,chit_id,month_number,scheduled_date,scheduled_amount,winner_payout_amount,month_type,status,agent_id,created_at,updated_at)
       VALUES(gen_random_uuid(),:chit,:number,:date,:amount,:payout,:type,'SCHEDULED',:agent,NOW(),NOW())`,
       {replacements:{chit:chit.id,number:month,date:dt.toISOString().slice(0,10),amount:amounts[i],
-        payout:normalizedPayoutAmounts[i],type:agentMonths.includes(month)?'AGENT_CHIT':'ACTION',
+        payout:agentMonths.includes(month)?totalChitAmount:payoutAmounts[i],type:agentMonths.includes(month)?'AGENT_CHIT':'ACTION',
         agent:agentMonths.includes(month)?resolvedAgentId:null},transaction});
    }
    const [months]:any=await this.db.query(`SELECT * FROM chit_months WHERE chit_id=:id ORDER BY month_number`,{replacements:{id:chit.id},transaction});
@@ -86,7 +81,7 @@ class ChitsController {
     LEFT JOIN chit_participants cp ON cp.chit_id=c.id AND cp.user_id=:user
     LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
     LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:user
-    WHERE c.creator_id=:user OR cp.id IS NOT NULL OR ag.id IS NOT NULL ORDER BY c.created_at DESC`,
+    WHERE c.status<>'DELETED' AND (c.creator_id=:user OR cp.id IS NOT NULL OR ag.id IS NOT NULL) ORDER BY c.created_at DESC`,
     {replacements:{user:user.sub}});
   return {success:true,data:rows};
  }
@@ -97,7 +92,7 @@ class ChitsController {
     LEFT JOIN chit_participants cp ON cp.chit_id=c.id AND cp.user_id=:user
     LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
     LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:user
-    WHERE c.id=:id AND (c.creator_id=:user OR cp.id IS NOT NULL OR ag.id IS NOT NULL)`,
+    WHERE c.id=:id AND c.status<>'DELETED' AND (c.creator_id=:user OR cp.id IS NOT NULL OR ag.id IS NOT NULL)`,
     {replacements:{id,user:user.sub}});
   if(!rows.length)throw new NotFoundException('Chit not found');
   const [months]:any=await this.db.query(`SELECT cm.*,
@@ -105,7 +100,9 @@ class ChitsController {
       AND p.status IN ('VERIFIED','PAID','SETTLED','COMPLETED')),0) AS verified_collections
     FROM chit_months cm WHERE cm.chit_id=:id ORDER BY cm.month_number`,{replacements:{id}});
   const chit=rows[0]; const currentSavings=Number(chit.accumulated_savings_amount||0);
-  return {success:true,data:{...chit,currentSavings,savingsDisplay:`₹${currentSavings.toFixed(2)}`,
+  const [agentRows]:any=await this.db.query(`SELECT ag.id,ag.name,ag.mobile,ag.upi_id,ag.status,ag.user_id FROM chit_agent_assignments ca JOIN agents ag ON ag.id=ca.agent_id WHERE ca.chit_id=:id AND ca.active=true AND ag.status='ACTIVE' ORDER BY ca.created_at DESC LIMIT 1`,{replacements:{id}});
+  const responsibleAgent=agentRows[0]??null;
+  return {success:true,data:{...chit,currentSavings,savingsDisplay:`₹${currentSavings.toFixed(2)}`,responsibleAgent,
     months,remainingMonths:Math.max(0,Number(chit.total_months)-Number(chit.completed_months||0)),
     configurationNote:'For AGENT_CHIT months there is no draw. All active members still contribute and the configured agent receives winner_payout_amount.'}};
  }
@@ -151,22 +148,19 @@ class ChitsController {
     throw new ConflictException('Month schedule cannot be changed after publication/activation');
    if(dto.months.length!==Number(chit.total_months))throw new BadRequestException(`Exactly ${chit.total_months} monthly entries are required`);
    const seen=new Set<number>();
-   const [creatorAgent]:any=await this.db.query(`SELECT id FROM agents WHERE user_id=:user AND status='ACTIVE' LIMIT 1`,{replacements:{user:user.sub},transaction});
-   const creatorAgentId=creatorAgent.length?creatorAgent[0].id:null;
-   const faceAmount=Number(chit.total_chit_amount||0);
    for(const m of dto.months){
     if(seen.has(m.monthNumber))throw new BadRequestException(`Month ${m.monthNumber} is duplicated`); seen.add(m.monthNumber);
     if(m.monthNumber<1||m.monthNumber>Number(chit.total_months))throw new BadRequestException('Invalid month number');
     const amount=Number(m.scheduledAmount),payout=Number(m.winnerPayoutAmount);
-    if(!Number.isFinite(amount)||amount<=0)throw new BadRequestException(`Month ${m.monthNumber} contribution amount must be positive`);
-    if(!Number.isFinite(payout)||payout<=0)throw new BadRequestException(`Month ${m.monthNumber} payout amount must be positive`);
-    if(m.monthType==='AGENT_CHIT'&&!m.agentId){
-      if(!creatorAgentId)throw new BadRequestException(`Month ${m.monthNumber} requires an active agent`);
-      m.agentId=creatorAgentId;
+    if(m.monthType==='AGENT_CHIT' && !m.agentId){
+      const [creatorAgent]:any=await this.db.query(`SELECT ag.id FROM chit_agent_assignments ca JOIN agents ag ON ag.id=ca.agent_id WHERE ca.chit_id=:chitId AND ca.active=true AND ag.status='ACTIVE' LIMIT 1`,{replacements:{chitId:id},transaction});
+      if(creatorAgent.length)m.agentId=creatorAgent[0].id;
     }
+    if(!Number.isFinite(amount)||amount<=0)throw new BadRequestException(`Month ${m.monthNumber} contribution amount must be positive`);
+    if(m.monthType==='AGENT_CHIT')m.winnerPayoutAmount=Number(chit.total_chit_amount);
+    if(!Number.isFinite(Number(m.winnerPayoutAmount))||Number(m.winnerPayoutAmount)<=0)throw new BadRequestException(`Month ${m.monthNumber} payout amount must be positive`);
+    if(m.monthType==='AGENT_CHIT'&&!m.agentId)throw new BadRequestException(`Month ${m.monthNumber} requires an agent`);
     if(m.monthType!=='AGENT_CHIT'&&m.agentId)throw new BadRequestException(`Month ${m.monthNumber} cannot contain an agent`);
-    if(m.monthType==='AGENT_CHIT' && (!Number.isFinite(faceAmount)||faceAmount<=0))throw new BadRequestException('Chit total amount must be positive for AGENT_CHIT months');
-    if(m.monthType==='AGENT_CHIT')m.winnerPayoutAmount=String(faceAmount.toFixed(2));
     if(m.agentId){
       const [agentRows]:any=await this.db.query(`SELECT id,user_id,name,status FROM agents
         WHERE (id=:agentId OR user_id=:agentId) AND status='ACTIVE' LIMIT 1`,{replacements:{agentId:m.agentId},transaction});
@@ -176,7 +170,7 @@ class ChitsController {
     await this.db.query(`UPDATE chit_months SET scheduled_date=:date,scheduled_amount=:amount,
       winner_payout_amount=:payout,month_type=:type,agent_id=:agent,updated_at=NOW()
       WHERE chit_id=:chitId AND month_number=:number`,
-      {replacements:{date:m.scheduledDate,amount,payout,type:m.monthType,agent:m.agentId??null,chitId:id,number:m.monthNumber},transaction});
+      {replacements:{date:m.scheduledDate,amount,payout:m.monthType==='AGENT_CHIT'?Number(chit.total_chit_amount):Number(m.winnerPayoutAmount),type:m.monthType,agent:m.agentId??null,chitId:id,number:m.monthNumber},transaction});
    }
    if(dto.totalChitAmount!==undefined){
     const face=Number(dto.totalChitAmount); if(!Number.isFinite(face)||face<=0)throw new BadRequestException('totalChitAmount must be positive');
@@ -219,10 +213,8 @@ class ChitsController {
    const c=rows[0];
    if(c.status==='ACTIVE')return {success:true,data:{...c,configurationLocked:true}};
    if(c.status!=='READY_TO_START')throw new ConflictException(`Chit cannot be started in its current state: ${c.status}`);
-   const [first]:any=await this.db.query(`SELECT * FROM chit_months WHERE chit_id=:id ORDER BY month_number LIMIT 1`,
-     {replacements:{id},transaction});
-   if(!first.length)throw new ConflictException('Chit has no monthly schedule');
-   if(first[0].status==='LOCKED'||first[0].status==='COMPLETED')throw new ConflictException('First month is already completed or locked');
+   const [first]:any=await this.db.query(`SELECT * FROM chit_months WHERE chit_id=:id AND status NOT IN ('LOCKED','COMPLETED') ORDER BY month_number LIMIT 1`,{replacements:{id},transaction});
+   if(!first.length)throw new ConflictException('All chit months are already completed or locked');
    const [updated]:any=await this.db.query(`UPDATE chits SET status='ACTIVE',updated_at=NOW() WHERE id=:id RETURNING *`,
      {replacements:{id},transaction});
    return {success:true,data:{...updated[0],startedMonth:first[0].month_number,configurationLocked:true}};

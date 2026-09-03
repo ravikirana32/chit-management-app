@@ -17,9 +17,9 @@ class CollectionsController {
   @ApiOperation({summary:'List overdue/default contribution obligations'})
   async overdue(@Param('chitId') chitId:string,@CurrentUser() user:any){
     const [access]:any=await this.sequelize.query(
-      `SELECT id FROM chits WHERE id=:chitId AND creator_id=:userId`,
+      `SELECT id FROM chits WHERE id=:chitId AND (creator_id=:userId OR EXISTS (SELECT 1 FROM chit_agent_assignments ca JOIN agents ag ON ag.id=ca.agent_id WHERE ca.chit_id=:chitId AND ca.active=true AND ag.user_id=:userId AND ag.status='ACTIVE' AND ca.can_collect_cash=true) OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))`,
       {replacements:{chitId,userId:user.sub}});
-    if(!access.length) return {success:false,message:'Only creator can view collection exceptions'};
+    if(!access.length) return {success:false,message:'Collection permission is required for this chit'};
     const [rows]:any=await this.sequelize.query(
       `SELECT o.*,m.month_number,m.scheduled_date,cp.participant_sequence,u.name,u.mobile
        FROM contribution_obligations o

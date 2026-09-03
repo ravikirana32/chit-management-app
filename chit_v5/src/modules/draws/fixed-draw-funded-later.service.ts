@@ -80,8 +80,8 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
         throw new ConflictException('Draw is already completed');
 
       const now = new Date();
-      if (draw.scheduled_at && now < new Date(draw.scheduled_at))
-        throw new ConflictException('Draw time has not arrived');
+      const drawTimeAllowed=!draw.scheduled_at||now>=new Date(draw.scheduled_at);
+      this.schedulePolicy.assertScheduleAllowed(drawTimeAllowed,'Draw time has not arrived');
 
       const [eligible]: any = await this.db.query(
         `SELECT dp.*, cp.user_id

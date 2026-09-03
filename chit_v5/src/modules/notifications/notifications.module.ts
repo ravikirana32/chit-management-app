@@ -1,4 +1,4 @@
-import {Body,Controller,Get,Module,Put,UseGuards} from '@nestjs/common';
+import {Body,Controller,Get,Module,Put,UseGuards,Param} from '@nestjs/common';
 import {ApiBearerAuth,ApiProperty,ApiTags} from '@nestjs/swagger';
 import {IsBoolean,IsOptional,IsString,Matches} from 'class-validator';
 import {Sequelize} from 'sequelize-typescript';
@@ -21,6 +21,23 @@ class NotificationPreferenceDto{
 @Controller({path:'notifications',version:'1'})
 class NotificationsController{
  constructor(private readonly db:Sequelize){}
+ @Get('me')
+ async mine(@CurrentUser()u:any){
+  const [r]:any=await this.db.query(`SELECT id,chit_id,type,title,body,data,read_at,sent_at,status,created_at FROM notifications WHERE user_id=:u ORDER BY created_at DESC LIMIT 100`,{replacements:{u:u.sub}});
+  return {success:true,data:r};
+ }
+ @Get('chits/:chitId')
+ async list(@Param('chitId')chitId:string,@CurrentUser()u:any){
+  const [r]:any=await this.db.query(`SELECT id,type,title,body,data,read_at,sent_at,status,created_at FROM notifications WHERE user_id=:u AND chit_id=:chitId ORDER BY created_at DESC LIMIT 100`,{replacements:{u:u.sub,chitId}});
+  return {success:true,data:r};
+ }
+ @Put(':id/read')
+ async markRead(@Param('id')id:string,@CurrentUser()u:any){
+  const [r]:any=await this.db.query(`UPDATE notifications SET read_at=COALESCE(read_at,NOW()),updated_at=NOW() WHERE id=:id AND user_id=:u RETURNING *`,{replacements:{id,u:u.sub}});
+  if(!r.length) return {success:false,message:'Notification not found'};
+  return {success:true,data:r[0]};
+ }
+
  @Get('preferences')
  async get(@CurrentUser()u:any){
   const [r]:any=await this.db.query(`SELECT * FROM notification_preferences WHERE user_id=:u`,{replacements:{u:u.sub}});

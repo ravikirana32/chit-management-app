@@ -61,19 +61,6 @@ export default function AdminUsers(){
 
   return <Screen title="Users" subtitle="ADMIN only" back={()=>router.back()}>
     <ScrollView keyboardShouldPersistTaps="handled">
-
-      <Card>
-        <Text style={s.section}>Create user</Text>
-        <Input label="Name" value={name} onChangeText={setName}/>
-        <Input label="Mobile" value={mobile} onChangeText={setMobile} keyboardType="phone-pad"/>
-        <Input label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none"/>
-        <Select label="Role" value={role} options={[
-          {label:'MEMBER',value:'MEMBER'},
-          {label:'AGENT',value:'AGENT'},
-          {label:'ADMIN',value:'ADMIN'}
-        ]} onChange={setRole}/>
-        <Button title="Create User" onPress={create} disabled={busy}/>
-      </Card>
       <Card>
         <Text style={s.section}>Search & Filter</Text>
         <Input
@@ -108,7 +95,18 @@ export default function AdminUsers(){
         <Text style={[s.muted,{marginTop:5}]}>Showing {filtered.length} of {data.length} users</Text>
       </Card>
 
-      
+      <Card>
+        <Text style={s.section}>Create user</Text>
+        <Input label="Name" value={name} onChangeText={setName}/>
+        <Input label="Mobile" value={mobile} onChangeText={setMobile} keyboardType="phone-pad"/>
+        <Input label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none"/>
+        <Select label="Role" value={role} options={[
+          {label:'MEMBER',value:'MEMBER'},
+          {label:'AGENT',value:'AGENT'},
+          {label:'ADMIN',value:'ADMIN'}
+        ]} onChange={setRole}/>
+        <Button title="Create User" onPress={create} disabled={busy}/>
+      </Card>
 
       {filtered.length===0?
         <Card>
@@ -126,6 +124,7 @@ export default function AdminUsers(){
           </View>
           <Text style={s.muted}>{String(x.status||'UNKNOWN')}</Text>
           <Button title="Edit User" secondary onPress={()=>router.push({pathname:'/edit-user',params:{userId:String(x.id)}})}/>
+          {normalize(x.status)!=='deleted'&&<Button title="Delete User" danger onPress={()=>Alert.alert('Delete user?',`This will deactivate ${String(x.name||'this user')} and remove active roles.`,[{text:'Cancel',style:'cancel'},{text:'Delete',style:'destructive',onPress:async()=>{try{await usersApi.deleteUser(String(x.id));load()}catch(e){Alert.alert('Delete failed',errMsg(e))}}}])}/>}
           {normalize(x.status)==='deleted'&&
             <Text style={[s.muted,{marginTop:5}]}>This user is deleted and cannot be used for new operations.</Text>}
         </Card>)
