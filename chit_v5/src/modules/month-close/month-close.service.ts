@@ -28,13 +28,23 @@ export class MonthCloseService {
         notes=CONCAT(COALESCE(stale.notes,''),' | SUPERSEDED_BY_SETTLED_PAYOUT:',settled.id),
         updated_at=NOW()
     FROM payouts settled
+    JOIN chit_months sm ON sm.id=settled.chit_month_id
+    LEFT JOIN agents sa ON sa.id=sm.agent_id
     WHERE stale.chit_month_id=:monthId
       AND stale.status='PENDING'
       AND stale.id<>settled.id
-      AND stale.notes LIKE 'AGENT_CHIT:%'
-      AND settled.chit_month_id=:monthId
+      AND sm.month_type='AGENT_CHIT'
       AND settled.status='SETTLED'
-      AND settled.notes LIKE 'AGENT_CHIT:%'`,
+      AND (
+        stale.notes LIKE 'AGENT_CHIT:%'
+        OR (sm.agent_id IS NOT NULL AND stale.recipient_agent_id=sm.agent_id)
+        OR (sa.user_id IS NOT NULL AND stale.recipient_user_id=sa.user_id)
+      )
+      AND (
+        settled.notes LIKE 'AGENT_CHIT:%'
+        OR (sm.agent_id IS NOT NULL AND settled.recipient_agent_id=sm.agent_id)
+        OR (sa.user_id IS NOT NULL AND settled.recipient_user_id=sa.user_id)
+      )`,
    {replacements:{monthId},transaction});
   const [payout]:any=await this.sequelize.query(`SELECT COUNT(*)::int AS count FROM payouts WHERE chit_month_id=:monthId AND status='PENDING'`,{replacements:{monthId},transaction});if(Number(payout[0].count)>0)throw new ConflictException('Cannot lock month with pending payout');
   const [updated]:any=await this.sequelize.query(`UPDATE chit_months SET status='LOCKED',locked_at=NOW(),locked_by=:userId,updated_at=NOW() WHERE id=:monthId RETURNING *`,{replacements:{monthId,userId},transaction});return updated[0];

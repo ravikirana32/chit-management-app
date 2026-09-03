@@ -167,12 +167,16 @@ class ChitsController {
 
   const [months]:any=await this.db.query(`
     SELECT cm.*,
+      a.user_id AS agent_user_id,
+      a.name AS agent_name,
+      a.upi_id AS agent_upi_id,
       COALESCE((
         SELECT SUM(p.amount) FROM payments p
         WHERE p.chit_month_id=cm.id
           AND p.status IN ('VERIFIED','PAID','SETTLED','COMPLETED')
       ),0) AS verified_collections
     FROM chit_months cm
+    LEFT JOIN agents a ON a.id=cm.agent_id
     WHERE cm.chit_id=:id
     ORDER BY cm.month_number
   `,{replacements:{id}});

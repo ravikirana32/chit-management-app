@@ -74,15 +74,16 @@ export class PayoutFundedLaterService {
         `SELECT settled.id
          FROM chit_months m
          LEFT JOIN agents a ON a.id=m.agent_id
+         JOIN payouts current_p ON current_p.id=:payoutId
          JOIN payouts settled ON settled.chit_month_id=m.id AND settled.status='SETTLED'
          WHERE m.id=:monthId
            AND m.month_type='AGENT_CHIT'
            AND (
-             p.notes LIKE 'AGENT_CHIT:%'
-             OR p.recipient_agent_id=m.agent_id
-             OR p.recipient_user_id=a.user_id
+             current_p.notes LIKE 'AGENT_CHIT:%'
+             OR current_p.recipient_agent_id=m.agent_id
+             OR current_p.recipient_user_id=a.user_id
            )
-           AND settled.id<>:payoutId
+           AND settled.id<>current_p.id
            AND (
              settled.notes LIKE 'AGENT_CHIT:%'
              OR settled.recipient_agent_id=m.agent_id
