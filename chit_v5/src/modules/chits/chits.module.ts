@@ -157,7 +157,7 @@ class ChitsController {
       if(creatorAgent.length)m.agentId=creatorAgent[0].id;
     }
     if(!Number.isFinite(amount)||amount<=0)throw new BadRequestException(`Month ${m.monthNumber} contribution amount must be positive`);
-    if(m.monthType==='AGENT_CHIT')m.winnerPayoutAmount=Number(chit.total_chit_amount);
+    if(m.monthType==='AGENT_CHIT')m.winnerPayoutAmount=String(chit.total_chit_amount);
     if(!Number.isFinite(Number(m.winnerPayoutAmount))||Number(m.winnerPayoutAmount)<=0)throw new BadRequestException(`Month ${m.monthNumber} payout amount must be positive`);
     if(m.monthType==='AGENT_CHIT'&&!m.agentId)throw new BadRequestException(`Month ${m.monthNumber} requires an agent`);
     if(m.monthType!=='AGENT_CHIT'&&m.agentId)throw new BadRequestException(`Month ${m.monthNumber} cannot contain an agent`);

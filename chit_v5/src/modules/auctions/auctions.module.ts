@@ -30,7 +30,7 @@ class AuctionsController {
  @Get('chits/:chitId/months/:monthId/current') @ApiOperation({summary:'Get the latest monthly auction for a chit/month'})
  current(@Param('chitId')chitId:string,@Param('monthId')monthId:string,@CurrentUser()user:any){return this.service.current(chitId,monthId,user.sub)}
  @Get(':auctionId/state') @ApiOperation({summary:'Get current auction state and recent bids'})
- state(@Param('auctionId')auctionId:string,@CurrentUser()user:any){return this.auctionState.getState(auctionId,user.sub)}
+ state(@Param('auctionId')auctionId:string,@CurrentUser()user:any){return this.auctionState.getState(auctionId)}
  @Get('chits/:chitId/savings') @ApiOperation({summary:'View chit savings balance and transaction history'})
  savings(@Param('chitId')chitId:string,@CurrentUser()user:any){return this.service.getSavings(chitId,user.sub)}
 }
