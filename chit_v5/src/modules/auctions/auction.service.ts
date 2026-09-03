@@ -3,11 +3,12 @@ import {
 } from '@nestjs/common';
 import { Sequelize } from 'sequelize-typescript';
 import { AuctionGateway } from './auction.gateway';
+import { WinnerRevealService } from '../../common/enterprise-hardening/winner-reveal.service';
 import { OperationSchedulePolicyService } from '../../common/enterprise-hardening/operation-schedule-policy.service';
 
 @Injectable()
 export class AuctionService {
-  constructor(private readonly sequelize: Sequelize, private readonly gateway: AuctionGateway, private readonly schedulePolicy: OperationSchedulePolicyService) {}
+  constructor(private readonly sequelize: Sequelize, private readonly gateway: AuctionGateway, private readonly winnerReveal: WinnerRevealService, private readonly schedulePolicy: OperationSchedulePolicyService) {}
 
   private async canRunAuction(chitId: string, userId: string, transaction?: any) {
     const [creator]: any = await this.sequelize.query(
@@ -47,7 +48,7 @@ export class AuctionService {
        FROM chits WHERE id=:chitId`,
       { replacements: { chitId }, transaction },
     );
-    return !!r.length && String(r[0].today) === String(scheduledDate).slice(0,10);
+    return r.length && r[0].today === scheduledDate;
   }
 
   async open(chitId: string, monthId: string, actorUserId: string, durationMinutes: number) {
@@ -67,8 +68,8 @@ export class AuctionService {
       if (month.month_type === 'AGENT_CHIT') throw new BadRequestException('Agent Chit months cannot be auctioned');
       if (!['READY_TO_START', 'ACTIVE'].includes(month.chit_status)) throw new ConflictException('Chit is not ready for auction');
       if (!['SCHEDULED', 'READY_FOR_ACTION', 'COLLECTION'].includes(month.status)) throw new ConflictException('This month is not available for auction');
-      const dateAllowed=await this.localDateMatches(this.sequelize,chitId,month.scheduled_date,transaction);
-      this.schedulePolicy.assertScheduleAllowed(dateAllowed,`Auction can only be opened on scheduled date ${month.scheduled_date}`);
+      const dateAllowed = await this.localDateMatches(this.sequelize, chitId, month.scheduled_date, transaction);
+      this.schedulePolicy.assertScheduleAllowed(dateAllowed, `Auction can only be opened on scheduled date ${month.scheduled_date}`);
 
       const [existing]: any = await this.sequelize.query(
         `SELECT id,status FROM auctions WHERE chit_month_id=:monthId FOR UPDATE`,
@@ -115,8 +116,8 @@ export class AuctionService {
       if (a.status !== 'OPEN') throw new ConflictException('Only an open auction can be closed');
       if (new Date(a.ends_at).getTime() <= Date.now()) throw new ConflictException('Auction time has already expired; it will be auto-closed');
       const localDate = a.scheduled_date || new Date(a.starts_at).toISOString().slice(0,10);
-      const dateAllowed=await this.localDateMatches(this.sequelize,a.chit_id,localDate,transaction);
-      this.schedulePolicy.assertScheduleAllowed(dateAllowed,'Auction can only be manually closed on its auction date');
+      const dateAllowed = await this.localDateMatches(this.sequelize, a.chit_id, localDate, transaction);
+      this.schedulePolicy.assertScheduleAllowed(dateAllowed, 'Auction can only be manually closed on its auction date');
       const [updated]: any = await this.sequelize.query(
         `UPDATE auctions SET status='CLOSED_PENDING_FINALIZATION',updated_at=NOW() WHERE id=:auctionId RETURNING *`,
         { replacements: { auctionId }, transaction },
@@ -145,7 +146,8 @@ export class AuctionService {
       if (a.status === 'COMPLETED') throw new ConflictException('A finalized auction cannot be reopened');
       if (a.status !== 'CLOSED_PENDING_FINALIZATION') throw new ConflictException('Only an early-closed auction can be reopened');
       const date = a.scheduled_date || new Date(a.starts_at).toISOString().slice(0,10);
-      const dateAllowed=await this.localDateMatches(this.sequelize,a.chit_id,date,transaction); this.schedulePolicy.assertScheduleAllowed(dateAllowed,'Auction can only be reopened on its auction date');
+      const dateAllowed = await this.localDateMatches(this.sequelize, a.chit_id, date, transaction);
+      this.schedulePolicy.assertScheduleAllowed(dateAllowed, 'Auction can only be reopened on its auction date');
       const remainingSeconds = Math.floor((new Date(a.ends_at).getTime() - Date.now()) / 1000);
       if (remainingSeconds <= 0) throw new ConflictException('The original auction window has expired and cannot be reopened');
       const requested = durationMinutes ?? Math.max(1, Math.ceil(remainingSeconds / 60));
@@ -190,8 +192,7 @@ export class AuctionService {
   }
 
   async current(chitId: string, monthId: string, userId: string) {
-    const [access]:any=await this.sequelize.query(`SELECT 1 FROM chits c LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:user WHERE c.id=:chitId AND (c.creator_id=:user OR ag.user_id=:user OR EXISTS (SELECT 1 FROM chit_participants cp WHERE cp.chit_id=c.id AND cp.user_id=:user AND cp.status='ACTIVE') OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:user AND ur.role='ADMIN')) LIMIT 1`,{replacements:{chitId,user:userId}});
-    if(!access.length)throw new ConflictException('Auction access is required for this chit');
+    await this.assertCanRunAuction(chitId, userId);
     const [rows]: any = await this.sequelize.query(
       `SELECT a.id,a.status,a.auction_type,a.starts_at,a.ends_at,a.funding_amount,
               a.winning_bid_amount,a.discount_amount,a.payout_amount,
@@ -262,14 +263,15 @@ export class AuctionService {
       const [payoutRows]:any=await this.sequelize.query(`INSERT INTO payouts(id,chit_id,chit_month_id,recipient_user_id,amount,payment_method,status,recorded_by,notes,created_at,updated_at) VALUES(gen_random_uuid(),:chitId,:monthId,:userId,:amount,'UPI','PENDING',:actor,:notes,NOW(),NOW()) RETURNING *`,{replacements:{chitId:a.chit_id,monthId:a.chit_month_id??null,userId:winner.user_id,amount:payoutAmount,actor:actorUserId,notes:isAdditional?'Additional auction payout from chit savings':`Auction discount: ₹${discount.toFixed(2)}`},transaction});
       await this.sequelize.query(`UPDATE bids SET status=CASE WHEN id=:winnerId THEN 'WINNING' ELSE 'NON_WINNING' END,updated_at=NOW() WHERE auction_id=:auctionId AND status='VALID'`,{replacements:{winnerId:winner.id,auctionId},transaction});
       await this.sequelize.query(`UPDATE auctions SET status='COMPLETED',winner_participant_id=:pid,winning_bid_amount=:amount,discount_amount=:discount,payout_amount=:payout,completed_at=NOW(),updated_at=NOW() WHERE id=:auctionId`,{replacements:{auctionId,pid:winner.chit_participant_id,amount:discount,discount,payout:payoutAmount},transaction});
+      const reveal = await this.winnerReveal.start('AUCTION', auctionId, transaction);
       if(a.chit_month_id){
         await this.sequelize.query(`UPDATE chit_months SET status='COMPLETED',updated_at=NOW() WHERE id=:monthId`,{replacements:{monthId:a.chit_month_id},transaction});
       }
       // Financial savings transaction is deliberately deferred to payout settlement.
       // This keeps collections, payout and savings atomic even when members pay later.
       await this.audit(auctionId,a.chit_id,actorUserId,'AUCTION_COMPLETED',{winnerParticipantId:winner.chit_participant_id,winningBid:discount,scheduledAmount:pot,payoutAmount,bidCount:bids.length,isAdditional,savingsBefore,savingsAfter},transaction);
-      this.gateway.emitClosed(auctionId,{auctionId,winnerParticipantId:winner.chit_participant_id,winningBid:discount,payoutAmount,savingsAfter});
-      return {auctionId,winnerParticipantId:winner.chit_participant_id,winningBid:discount,scheduledAmount:pot,payoutAmount,bidCount:bids.length,isAdditional,savingsBefore,savingsAfter,remainingMonths:Math.max(0,Number(a.total_months)-Number(a.completed_months||0)-1),rule:'Winner remains active and continues future contributions.',winner:winnerRows[0],payout:payoutRows[0]};
+      this.gateway.emitClosed(auctionId,{auctionId,revealStatus:reveal?.reveal_status,revealStartedAt:reveal?.reveal_started_at,revealEndsAt:reveal?.reveal_ends_at,status:'COMPLETED'});
+      return {auctionId,revealStatus:reveal?.reveal_status,revealStartedAt:reveal?.reveal_started_at,revealEndsAt:reveal?.reveal_ends_at,revealDurationSeconds:reveal?.reveal_duration_seconds,scheduledAmount:pot,payoutAmount,bidCount:bids.length,isAdditional,savingsBefore,savingsAfter,remainingMonths:Math.max(0,Number(a.total_months)-Number(a.completed_months||0)-1),rule:'Winner is securely committed before the reveal. The winner is disclosed only when the server-side reveal window ends.',financialSettlementDeferred:true,payout:payoutRows[0]};
     });
   }
 

@@ -6,6 +6,7 @@ import { AuctionGateway } from './auction.gateway';
 import { AuctionAutoCloseService } from './auction-auto-close.service';
 import { OpenAuctionDto } from './dto/open-auction.dto';
 import { PlaceBidDto } from './dto/place-bid.dto';
+import { FinalizeAuctionDto } from './dto/finalize-auction.dto';
 import { ReopenAuctionDto } from './dto/reopen-auction.dto';
 import { AdditionalAuctionDto } from './dto/additional-auction.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -26,11 +27,11 @@ class AuctionsController {
  @Post(':auctionId/bids') @ApiOperation({summary:'Place a bid during the auction window'})
  bid(@Param('auctionId')auctionId:string,@Body()dto:PlaceBidDto,@CurrentUser()user:any){return this.service.placeBid(auctionId,dto.participantId,user.sub,dto.bidAmount)}
  @Post(':auctionId/finalize') @ApiOperation({summary:'Finalize a closed/expired auction'})
- finalize(@Param('auctionId')auctionId:string,@CurrentUser()user:any){return this.service.finalize(auctionId,user.sub)}
+ finalize(@Param('auctionId')auctionId:string,@Body()_dto:FinalizeAuctionDto,@CurrentUser()user:any){return this.service.finalize(auctionId,user.sub)}
  @Get('chits/:chitId/months/:monthId/current') @ApiOperation({summary:'Get the latest monthly auction for a chit/month'})
  current(@Param('chitId')chitId:string,@Param('monthId')monthId:string,@CurrentUser()user:any){return this.service.current(chitId,monthId,user.sub)}
  @Get(':auctionId/state') @ApiOperation({summary:'Get current auction state and recent bids'})
- state(@Param('auctionId')auctionId:string,@CurrentUser()user:any){return this.auctionState.getState(auctionId)}
+ state(@Param('auctionId')auctionId:string,@CurrentUser()user:any){return this.auctionState.getState(auctionId,user.sub)}
  @Get('chits/:chitId/savings') @ApiOperation({summary:'View chit savings balance and transaction history'})
  savings(@Param('chitId')chitId:string,@CurrentUser()user:any){return this.service.getSavings(chitId,user.sub)}
 }
