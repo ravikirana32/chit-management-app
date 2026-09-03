@@ -251,6 +251,37 @@ export class PayoutFundedLaterService {
           { replacements: { payoutId, actor }, transaction },
         );
 
+        // An AGENT_CHIT month must have exactly one effective payout. Older
+        // versions could leave a duplicate PENDING payout behind after a
+        // successful settlement. That stale row would incorrectly block
+        // Month Close and would keep a second Settle button visible.
+        if (String(p.notes || '').startsWith('AGENT_CHIT:')) {
+          await this.sequelize.query(
+            `UPDATE payouts
+             SET status='FAILED',
+                 paid_at=NULL,
+                 notes=CONCAT(COALESCE(notes,''),' | SUPERSEDED_BY_SETTLED_PAYOUT:',:payoutId),
+                 updated_at=NOW()
+             WHERE chit_month_id=:monthId
+               AND status='PENDING'
+               AND id<>:payoutId
+               AND notes LIKE 'AGENT_CHIT:%'`,
+            { replacements: { monthId: p.chit_month_id, payoutId }, transaction },
+          );
+          await this.sequelize.query(
+            `INSERT INTO audit_logs
+             (id,actor_user_id,chit_id,action,entity_type,entity_id,after_data,created_at,updated_at)
+             SELECT gen_random_uuid(),:actor,p.chit_id,'AGENT_CHIT_DUPLICATE_PENDING_SUPERSEDED',
+                    'PAYOUT',q.id,:data,NOW(),NOW()
+             FROM payouts q
+             JOIN payouts p ON p.id=:payoutId
+             WHERE q.chit_month_id=p.chit_month_id
+               AND q.status='FAILED'
+               AND q.notes LIKE CONCAT('%SUPERSEDED_BY_SETTLED_PAYOUT:',:payoutId)`,
+            { replacements: { actor, payoutId, data: JSON.stringify({ settledPayoutId: payoutId }) }, transaction },
+          );
+        }
+
         return {
           ...updated[0],
           financial: {
