@@ -68,6 +68,32 @@ export class PayoutFundedLaterService {
       if (p.status === 'SETTLED')
         throw new ConflictException('Payout already settled');
 
+      // Never allow a second Agent Chit payment for the same month. This also
+      // protects legacy rows whose notes were changed after settlement.
+      const [existingAgentSettlement]: any = await this.sequelize.query(
+        `SELECT settled.id
+         FROM chit_months m
+         LEFT JOIN agents a ON a.id=m.agent_id
+         JOIN payouts settled ON settled.chit_month_id=m.id AND settled.status='SETTLED'
+         WHERE m.id=:monthId
+           AND m.month_type='AGENT_CHIT'
+           AND (
+             p.notes LIKE 'AGENT_CHIT:%'
+             OR p.recipient_agent_id=m.agent_id
+             OR p.recipient_user_id=a.user_id
+           )
+           AND settled.id<>:payoutId
+           AND (
+             settled.notes LIKE 'AGENT_CHIT:%'
+             OR settled.recipient_agent_id=m.agent_id
+             OR settled.recipient_user_id=a.user_id
+           )
+         LIMIT 1`,
+        { replacements: { monthId: p.chit_month_id, payoutId }, transaction },
+      );
+      if (existingAgentSettlement.length)
+        throw new ConflictException('Agent payout is already settled for this month');
+
       /*
        * A payout may be CREATED before members have paid.
        * It must NOT be SETTLED until the creator has enough verified funds.
@@ -192,13 +218,22 @@ export class PayoutFundedLaterService {
           );
         }
 
+        // Preserve the payout's business classification. The mobile client may
+        // send a human settlement note, but replacing an AGENT_CHIT marker with
+        // that note makes the already-settled payout invisible to Agent Month
+        // and allows a stale PENDING row to appear actionable again.
+        const settlementNotes =
+          dto.notes == null
+            ? p.notes
+            : `${String(p.notes || '').trim()}${p.notes ? ' | ' : ''}Settlement: ${String(dto.notes).trim()}`;
+
         const [updated]: any = await this.sequelize.query(
           `UPDATE payouts
            SET status=:status,
                payment_method=:method,
                transaction_reference=:reference,
                paid_at=NOW(),
-               notes=COALESCE(:notes,notes),
+               notes=:notes,
                updated_at=NOW()
            WHERE id=:payoutId
            RETURNING *`,
@@ -208,7 +243,7 @@ export class PayoutFundedLaterService {
               status: dto.status,
               method: dto.paymentMethod,
               reference: dto.transactionReference,
-              notes: dto.notes ?? null,
+              notes: settlementNotes,
             },
             transaction,
           },
@@ -251,23 +286,41 @@ export class PayoutFundedLaterService {
           { replacements: { payoutId, actor }, transaction },
         );
 
-        // An AGENT_CHIT month must have exactly one effective payout. Older
-        // versions could leave a duplicate PENDING payout behind after a
-        // successful settlement. That stale row would incorrectly block
-        // Month Close and would keep a second Settle button visible.
-        if (String(p.notes || '').startsWith('AGENT_CHIT:')) {
+        // An AGENT_CHIT month must have exactly one effective payout.
+        // Match both the explicit AGENT_CHIT marker and the configured agent
+        // recipient so this also repairs legacy rows whose notes were replaced
+        // by a generic settlement note.
+        const [agentMonthRows]: any = await this.sequelize.query(
+          `SELECT m.agent_id, a.user_id AS agent_user_id
+           FROM chit_months m
+           LEFT JOIN agents a ON a.id=m.agent_id
+           WHERE m.id=:monthId
+             AND m.month_type='AGENT_CHIT'
+           LIMIT 1`,
+          { replacements: { monthId: p.chit_month_id }, transaction },
+        );
+
+        if (agentMonthRows.length) {
+          const agentId = agentMonthRows[0].agent_id;
+          const agentUserId = agentMonthRows[0].agent_user_id;
+
           await this.sequelize.query(
-            `UPDATE payouts
+            `UPDATE payouts stale
              SET status='FAILED',
                  paid_at=NULL,
-                 notes=CONCAT(COALESCE(notes,''),' | SUPERSEDED_BY_SETTLED_PAYOUT:',:payoutId),
+                 notes=CONCAT(COALESCE(stale.notes,''),' | SUPERSEDED_BY_SETTLED_PAYOUT:',:payoutId),
                  updated_at=NOW()
-             WHERE chit_month_id=:monthId
-               AND status='PENDING'
-               AND id<>:payoutId
-               AND notes LIKE 'AGENT_CHIT:%'`,
-            { replacements: { monthId: p.chit_month_id, payoutId }, transaction },
+             WHERE stale.chit_month_id=:monthId
+               AND stale.status='PENDING'
+               AND stale.id<>:payoutId
+               AND (
+                 stale.notes LIKE 'AGENT_CHIT:%'
+                 OR (:agentId IS NOT NULL AND stale.recipient_agent_id=:agentId)
+                 OR (:agentUserId IS NOT NULL AND stale.recipient_user_id=:agentUserId)
+               )`,
+            { replacements: { monthId: p.chit_month_id, payoutId, agentId, agentUserId }, transaction },
           );
+
           await this.sequelize.query(
             `INSERT INTO audit_logs
              (id,actor_user_id,chit_id,action,entity_type,entity_id,after_data,created_at,updated_at)
@@ -278,7 +331,7 @@ export class PayoutFundedLaterService {
              WHERE q.chit_month_id=p.chit_month_id
                AND q.status='FAILED'
                AND q.notes LIKE CONCAT('%SUPERSEDED_BY_SETTLED_PAYOUT:',:payoutId)`,
-            { replacements: { actor, payoutId, data: JSON.stringify({ settledPayoutId: payoutId }) }, transaction },
+            { replacements: { actor, payoutId, data: JSON.stringify({ settledPayoutId: payoutId, agentId, agentUserId }) }, transaction },
           );
         }
 
