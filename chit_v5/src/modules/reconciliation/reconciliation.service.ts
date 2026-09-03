@@ -12,7 +12,7 @@ export class ReconciliationService {
        LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
        LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:userId
        WHERE c.id=:chitId
-         AND (c.creator_id=:userId OR (ag.id IS NOT NULL AND (ca.can_manage_chit=true OR ca.can_collect_cash=true)) OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
+         AND (c.creator_id=:userId OR ca.can_manage_chit=true OR ca.can_collect_cash=true OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
        LIMIT 1`,
       {replacements:{chitId,userId}});
     if(!access.length) throw new ConflictException('Reconciliation permission is required for this chit');
@@ -37,7 +37,7 @@ export class ReconciliationService {
        LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
        LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:userId
        WHERE c.id=:chitId AND
-         (c.creator_id=:userId OR (ag.id IS NOT NULL AND (ca.can_manage_chit=true OR ca.can_collect_cash=true)) OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
+         (c.creator_id=:userId OR ca.can_manage_chit=true OR ca.can_collect_cash=true OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
        LIMIT 1`,
       {replacements:{chitId,userId}});
     if(!access.length) throw new ConflictException('Reconciliation permission is required for this chit');
@@ -46,7 +46,7 @@ export class ReconciliationService {
        COALESCE((SELECT SUM(amount) FROM payments WHERE chit_month_id=m.id AND status='VERIFIED'),0) AS collected,
        COALESCE((SELECT SUM(amount) FROM payouts WHERE chit_month_id=m.id AND status='SETTLED'),0) AS settled_payout,
        COALESCE((SELECT SUM(outstanding_amount) FROM contribution_obligations WHERE chit_month_id=m.id),0) AS outstanding,
-       COALESCE((SELECT COUNT(*) FROM contribution_obligations WHERE chit_month_id=m.id AND status='VERIFIED'),0) AS paid_members,
+       COALESCE((SELECT COUNT(*) FROM contribution_obligations WHERE chit_month_id=m.id AND status IN ('PAID','VERIFIED','SETTLED','COMPLETED') AND outstanding_amount<=0),0) AS paid_members,
        COALESCE((SELECT COUNT(*) FROM contribution_obligations WHERE chit_month_id=m.id AND status IN ('OVERDUE','DEFAULTED')),0) AS overdue_members
        FROM chit_months m WHERE m.id=:monthId`,{replacements:{monthId}});
     return r[0];
@@ -74,7 +74,7 @@ export class ReconciliationService {
        LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
        LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:userId
        WHERE c.id=:chitId
-         AND (c.creator_id=:userId OR (ag.id IS NOT NULL AND (ca.can_manage_chit=true OR ca.can_collect_cash=true)) OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
+         AND (c.creator_id=:userId OR ca.can_manage_chit=true OR ca.can_collect_cash=true OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN'))
        LIMIT 1`,{replacements:{chitId,userId}});
     if(!chit.length) throw new NotFoundException('Chit not found');
     const [months]:any=await this.sequelize.query(`SELECT COUNT(*)::int total,COUNT(*) FILTER(WHERE status='LOCKED')::int locked FROM chit_months WHERE chit_id=:chitId`,{replacements:{chitId}});
