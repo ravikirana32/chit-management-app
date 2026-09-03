@@ -22,9 +22,9 @@ export function Screen({children,title,subtitle,back}:{children:React.ReactNode;
  * whitespace-only nodes. Filter those nodes at the common Card boundary.
  */
 export function Card({children}:{children:React.ReactNode}){
-  const safeChildren=React.Children.toArray(children)
-    .filter(child=>!(typeof child==='string'&&child.trim().length===0))
-    .map((child,i)=>typeof child==='string'||typeof child==='number'?<Text key={`primitive-${i}`}>{String(child)}</Text>:child);
+  const safeChildren=React.Children.toArray(children).filter(
+    child=>typeof child!=='string'||child.trim().length>0
+  );
   return <View style={s.card}>{safeChildren}</View>;
 }
 
