@@ -245,7 +245,6 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
         eligibleCount: eligible.length,
         interestedCount: interested.length,
         fallbackToAllEligible,
-        randomSource: 'node:crypto.randomInt',
         scheduledAmount: Number(m.scheduled_amount),
         winnerPayoutAmount: winnerPayout,
         openingSavings: Number(m.accumulated_savings_amount || 0),
