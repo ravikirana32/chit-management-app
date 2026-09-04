@@ -55,20 +55,7 @@ export class PayoutFundedLaterService {
          LEFT JOIN agents ag
            ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:actor
          WHERE c.id=:chitId
-           AND (
-             c.creator_id=:actor
-             OR EXISTS (
-               SELECT 1
-               FROM chit_agent_assignments ca2
-               JOIN agents ag2 ON ag2.id=ca2.agent_id
-               WHERE ca2.chit_id=c.id
-                 AND ca2.active=true
-                 AND ag2.status='ACTIVE'
-                 AND ag2.user_id=:actor
-                 AND (ca2.can_manage_chit=true OR ca2.can_collect_cash=true OR ca2.can_settle_payout=true)
-             )
-             OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:actor AND ur.role='ADMIN')
-           )
+           AND (c.creator_id=:actor OR ca.can_manage_chit=true OR ca.can_collect_cash=true OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=:actor AND ur.role='ADMIN'))
          LIMIT 1`,
         { replacements: { chitId: p.chit_id, actor }, transaction },
       );
@@ -80,21 +67,6 @@ export class PayoutFundedLaterService {
 
       if (p.status === 'SETTLED')
         throw new ConflictException('Payout already settled');
-
-      if (dto.status === 'SETTLED' && String(p.notes || '').startsWith('FIXED_DRAW:')) {
-        const [revealRows]: any = await this.sequelize.query(
-          `SELECT d.reveal_status
-           FROM draws d
-           WHERE d.chit_month_id=:monthId
-           ORDER BY d.created_at DESC
-           LIMIT 1`,
-          { replacements: { monthId: p.chit_month_id }, transaction },
-        );
-        const revealStatus = String(revealRows[0]?.reveal_status || 'NONE').toUpperCase();
-        if (revealStatus !== 'REVEALED') {
-          throw new ConflictException('Winner must be publicly revealed before the payout can be settled');
-        }
-      }
 
       /*
        * A payout may be CREATED before members have paid.
