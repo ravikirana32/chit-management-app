@@ -1,56 +1,38 @@
-import React,{useCallback,useEffect,useState}from'react';
+import React,{useEffect,useState}from'react';
 import{Alert,ScrollView,Text,View}from'react-native';
 import{router,useLocalSearchParams}from'expo-router';
-import{drawsApi,chitsApi,agentApi,participantsApi,payoutsApi}from'@/src/api/all';
+import{drawsApi,chitsApi,agentApi,participantsApi,operationsApi,payoutsApi}from'@/src/api/all';
 import{Badge,Button,Card,Input,Loading,Screen,s}from'@/src/components/UI';
 import{errMsg,money}from'@/src/lib/format';
 import{useAuth}from'@/src/state/Auth';
-import{isCreator,isMember,canOperate,isAgent,hasCapability,isAdmin}from'@/src/state/roles';
-import WinnerReveal from'@/src/components/WinnerReveal';
+import{isMember,isCreator,isAgent,isAdmin,canOperate,hasCapability}from'@/src/state/roles';
 
 export default function FixedDraw(){
  const{chitId,monthId}=useLocalSearchParams<{chitId:string;monthId:string}>();
- const{user}=useAuth(); const[state,setState]=useState<any>(); const[chit,setChit]=useState<any>();
- const[access,setAccess]=useState<any>(); const[payout,setPayout]=useState<any>(null);
- const[loading,setLoading]=useState(true); const[busy,setBusy]=useState(false); const[settling,setSettling]=useState(false);
- const[method,setMethod]=useState('CASH'); const[reference,setReference]=useState(''); const[error,setError]=useState('');
- const load=useCallback(async()=>{
-  setError('');
-  try{
-   const c=await chitsApi.get(String(chitId)); const cd=c.data?.data??c.data; setChit(cd);
-   await participantsApi.list(String(chitId));
-   try{const d=await drawsApi.get(String(chitId),String(monthId));const ds=d.data?.data??d.data;setState(ds);if(ds?.winner?.payout_id)setPayout({id:ds.winner.payout_id,status:ds.winner.payout_status||'PENDING',amount:ds.winner.payout_amount,recipient_name:ds.winner.member_name,recipient_mobile:ds.winner.member_mobile,payment_method:ds.winner.payment_method,transaction_reference:ds.winner.transaction_reference,paid_at:ds.winner.paid_at,notes:'FIXED_DRAW:'})}
-   catch{setState({status:'NOT_STARTED',revealStatus:'NONE',participants:[],winner:null})}
-   try{const ps=await payoutsApi.list(String(chitId));const rows=ps.data?.data??ps.data??[];
-    const fixed=rows.find((x:any)=>String(x.chit_month_id??x.chitMonthId)===String(monthId)&&String(x.notes||'').startsWith('FIXED_DRAW:'));
-    setPayout(fixed??null);
-   }catch{setPayout(null)}
-   if(isAgent(user)&&!isCreator(user,cd)){try{const a=await agentApi.chit(String(chitId));setAccess(a.data?.data??a.data)}catch{}}
-  }catch(e){setError(errMsg(e))}finally{setLoading(false)}
- },[chitId,monthId,user?.id]);
- useEffect(()=>{load()},[load]);
+ const{user}=useAuth();
+ const[state,setState]=useState<any>();const[chit,setChit]=useState<any>();const[access,setAccess]=useState<any>();const[policy,setPolicy]=useState<any>();const[members,setMembers]=useState<any[]>([]);const[payouts,setPayouts]=useState<any[]>([]);
+ const[loading,setLoading]=useState(true);const[busy,setBusy]=useState(false);const[settling,setSettling]=useState(false);const[method,setMethod]=useState('CASH');const[reference,setReference]=useState('');
+ const load=async()=>{setLoading(true);try{const c=await chitsApi.get(String(chitId));const cd=c.data?.data??c.data;setChit(cd);const p=await participantsApi.list(String(chitId));setMembers(p.data?.data??[]);try{const q=await operationsApi.policy();setPolicy(q.data?.data??q.data)}catch{}try{const d=await drawsApi.get(String(chitId),String(monthId));setState(d.data?.data??d.data)}catch{setState(null)}try{const pr=await payoutsApi.list(String(chitId));setPayouts(pr.data?.data??pr.data??[])}catch{setPayouts([])}if(isAgent(user)&&!isCreator(user,cd)){try{const a=await agentApi.chit(String(chitId));setAccess(a.data?.data??a.data)}catch{setAccess(undefined)}}}catch(e){Alert.alert('Unable to load',errMsg(e))}finally{setLoading(false)}};
+ useEffect(()=>{load()},[chitId,monthId,user?.id]);
  if(loading)return <Screen title="Fixed Draw" back={()=>router.back()}><Loading/></Screen>;
- if(error)return <Screen title="Fixed Draw" back={()=>router.back()}><Card><Text style={s.danger}>{error}</Text><Button title="Retry" onPress={load}/></Card></Screen>;
- if(!state||!chit)return <Screen title="Fixed Draw" back={()=>router.back()}><Card><Text>No draw data is available.</Text></Card></Screen>;
- const operate=canOperate(user,chit,'can_run_draw',access);
- const settleAllowed=isAdmin(user)||isCreator(user,chit)||hasCapability(user,chit,'can_settle_payout',access);
- const month=chit.months?.find((m:any)=>String(m.id)===String(monthId));
- const revealStatus=String(state.revealStatus??state.reveal_status??'NONE').toUpperCase();
- const revealActive=revealStatus==='REVEALING'; const completed=revealStatus==='REVEALED'; const winnerSelected=Boolean(state?.winner); const drawCompleted=String(state?.status||'').toUpperCase()==='COMPLETED'; const payoutReady=Boolean(payout); const payoutVisible=Boolean(payoutReady&&(completed||winnerSelected||drawCompleted));
+ if(!chit)return <Screen title="Fixed Draw" back={()=>router.back()}><Card><Text>Chit is unavailable.</Text></Card></Screen>;
+ const operate=canOperate(user,chit,'can_run_draw',access);const month=chit?.months?.find((m:any)=>m.id===monthId);const bypass=Boolean(policy?.scheduleBypassEnabled);const scheduledDate=month?.scheduled_date;const today=new Intl.DateTimeFormat('en-CA',{timeZone:chit?.timezone||'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());const scheduleReady=bypass||!scheduledDate||String(scheduledDate).slice(0,10)===today;const payout=state?.winner_payout_amount??state?.winnerPayoutAmount??state?.payout?.amount??month?.winner_payout_amount;
+ const drawStatus=String(state?.status||'NOT_OPENED').toUpperCase();const drawOpened=Boolean(state?.id||state?.drawId)&&!['NOT_STARTED','COMPLETED'].includes(drawStatus);const interestOpen=drawOpened&&(!state?.draw_interest_opens_at||bypass||Date.now()>=new Date(state.draw_interest_opens_at).getTime())&&(!state?.draw_interest_closes_at||bypass||Date.now()<=new Date(state.draw_interest_closes_at).getTime());
+ const memberName=(id:string)=>{const p=members.find(x=>x.id===id||x.chit_participant_id===id);return p?.name||p?.user_name||p?.user?.name||p?.mobile||`Participant ${id}`};
+ const monthPayouts=payouts.filter((p:any)=>String(p.chit_month_id||p.chitMonthId)===String(monthId));const winnerId=state?.winner?.chit_participant_id||state?.winner?.chitParticipantId;const winnerPayout=monthPayouts.find((p:any)=>winnerId&&String(p.recipient_participant_id||p.chit_participant_id||'')===String(winnerId))||monthPayouts.find((p:any)=>String(p.notes||'').includes('FIXED_DRAW'))||monthPayouts[0];
+ const settleAllowed=isAdmin(user)||isCreator(user,chit)||hasCapability(user,chit,'can_settle_payout',access)||hasCapability(user,chit,'can_manage_chit',access)||hasCapability(user,chit,'can_collect_cash',access);
  const interest=async(v:boolean)=>{setBusy(true);try{await drawsApi.interest(String(chitId),String(monthId),v);await load()}catch(e){Alert.alert('Interest failed',errMsg(e))}finally{setBusy(false)}};
- const start=async()=>{setBusy(true);try{await drawsApi.start(String(chitId),{chitMonthId:String(monthId)});await load()}catch(e){Alert.alert('Start failed',errMsg(e))}finally{setBusy(false)}};
- const run=async()=>{setBusy(true);try{await drawsApi.run(String(chitId),String(monthId));await load()}catch(e){Alert.alert('Run failed',errMsg(e))}finally{setBusy(false)}};
- const settle=async()=>{if(!payout?.id)return;if(!reference.trim())return Alert.alert('Reference required','Enter the UPI transaction ID, bank reference, or cash receipt number.');setSettling(true);try{await payoutsApi.settle(String(payout.id),{status:'SETTLED',paymentMethod:method,transactionReference:reference.trim(),notes:'Winner payout settled from Fixed Draw'});Alert.alert('Payout settled','Winner payout has been recorded. The month can now be closed and locked.');await load()}catch(e){Alert.alert('Payout settlement failed',errMsg(e))}finally{setSettling(false)}};
- return <Screen title="Fixed Draw" subtitle="Interest → secure selection → winner reveal" back={()=>router.back()}><ScrollView>
-  <Card><Text style={s.section}>Month {month?.month_number||'—'}</Text><Text style={{fontSize:24,fontWeight:'900'}}>{money(month?.winner_payout_amount??month?.scheduled_amount)}</Text><Text style={s.muted}>Previous winners are excluded. If nobody expresses interest, all eligible members are considered.</Text><Badge tone={completed?'green':revealActive?'purple':'orange'}>{completed?'WINNER REVEALED':revealActive?'REVEALING':state.status||'NOT STARTED'}</Badge></Card>
-  <WinnerReveal kind="DRAW" id={String(state.id||state.drawId||'')} state={state} reload={load} payoutAmount={Number(month?.winner_payout_amount||month?.scheduled_amount||0)}/>
-  {payoutVisible&&payout&&<Card><Text style={s.section}>Winner payout</Text><View style={s.row}><Text style={{flex:1,fontWeight:'800'}}>Amount</Text><Text style={{fontSize:22,fontWeight:'900'}}>{money(payout.amount)}</Text></View><View style={s.row}><Text style={{flex:1,fontWeight:'800'}}>Status</Text><Badge tone={payout.status==='SETTLED'?'green':'orange'}>{payout.status}</Badge></View>{payout.recipient_name&&<Text style={s.muted}>Winner: {payout.recipient_name}</Text>}
-   {payout.status!=='SETTLED'&&settleAllowed&&<><Text style={s.muted}>Record the actual winner payment to clear the pending payout and enable month close.</Text><Input label="Transaction / receipt reference" value={reference} onChangeText={setReference} placeholder="UPI-123 / CASH-001"/><View style={s.row}>{['CASH','UPI','BANK_TRANSFER'].map(x=><Button key={x} title={x} secondary={method!==x} onPress={()=>setMethod(x)} disabled={settling}/>)}</View><Button title="Settle winner payout" onPress={settle} disabled={settling}/></>}
-   {payout.status==='SETTLED'&&<Text style={s.success}>✓ Winner payout settled. You can now close and lock the month.</Text>}
-  </Card>}
-  {!revealActive&&!completed&&!drawCompleted&&operate&&<Button title="Open / Restart Interest Window" onPress={start} disabled={busy}/>}
-  {!revealActive&&!completed&&!drawCompleted&&isMember(user)&&<Card><Text style={s.section}>My interest</Text><Text style={s.muted}>Express interest to participate in this month's draw.</Text><View style={s.row}><View style={{flex:1}}><Button title="Interested" onPress={()=>interest(true)} disabled={busy}/></View><View style={{flex:1}}><Button title="Not interested" secondary onPress={()=>interest(false)} disabled={busy}/></View></View></Card>}
-  {state.participants?.length>0&&<Card><Text style={s.section}>Eligible members</Text>{state.participants.map((p:any)=><Text key={p.id} style={{paddingVertical:6}}>{p.participant_sequence||p.participantSequence} · {p.interest_status||p.interestStatus}</Text>)}</Card>}
-  {!revealActive&&!completed&&!drawCompleted&&operate&&<Button title="Run Draw Now" onPress={run} disabled={busy}/>}
+ const start=async()=>{if(!scheduleReady)return Alert.alert('Draw not available yet',`Scheduled date: ${String(scheduledDate).slice(0,10)}. Test mode is disabled.`);setBusy(true);try{await drawsApi.start(String(chitId),{chitMonthId:String(monthId)});await load();Alert.alert(bypass?'Test draw opened':'Draw opened','Members can now express interest.')}catch(e){Alert.alert('Open failed',errMsg(e))}finally{setBusy(false)}};
+ const run=async()=>{if(!bypass&&state?.draw_at&&Date.now()<new Date(state.draw_at).getTime())return Alert.alert('Draw not available yet',`Scheduled for ${new Date(state.draw_at).toLocaleString()}`);setBusy(true);try{await drawsApi.run(String(chitId),String(monthId));await load();Alert.alert('Draw completed','The system selected the winner. The payout is now pending settlement.')}catch(e){Alert.alert('Run failed',errMsg(e))}finally{setBusy(false)}};
+ const settle=async()=>{if(!winnerPayout)return Alert.alert('Payout not found','The winner was selected, but the pending payout record was not returned by the payout register. Refresh and try again.');if(!reference.trim())return Alert.alert('Reference required','Enter a cash receipt, UPI reference, or bank transaction reference.');setSettling(true);try{await payoutsApi.settle(String(winnerPayout.id),{status:'SETTLED',paymentMethod:method,transactionReference:reference.trim(),notes:`Winner payout settled for Month ${month?.month_number??''}`});setReference('');await load();Alert.alert('Payout settled','Winner payout is settled. You can now complete reconciliation and close the month.')}catch(e){Alert.alert('Settlement failed',errMsg(e))}finally{setSettling(false)}};
+ return <Screen title="Fixed Draw" subtitle="Open → interest → run → payout settlement" back={()=>router.back()}><ScrollView>
+ {bypass&&<Card><Text style={{fontWeight:'900'}}>⚠ TEST MODE</Text><Text style={s.muted}>Schedule restrictions are bypassed by the API. Authorization and financial rules still apply.</Text></Card>}
+ <Card><Text style={s.section}>Month {month?.month_number||'—'} payout</Text><Text style={{fontSize:24,fontWeight:'800'}}>{money(payout)}</Text><Text style={s.muted}>Scheduled date: {String(scheduledDate||'—').slice(0,10)}</Text><Badge tone={drawStatus==='COMPLETED'?'green':drawOpened?'purple':'orange'}>{drawStatus}</Badge></Card>
+ {!drawOpened&&drawStatus!=='COMPLETED'&&operate&&<Card><Text style={s.section}>Open Fixed Draw / Interest Window</Text>{!scheduleReady&&<Text style={s.danger}>Opening is available on the scheduled date. Enable API test bypass only in a test environment.</Text>}<Button title={bypass?'Open Fixed Draw (TEST)':'Open Fixed Draw / Interest Window'} onPress={start} disabled={busy||!scheduleReady}/></Card>}
+ {drawOpened&&interestOpen&&isMember(user)&&<Card><Text style={s.section}>My interest</Text><Text style={s.muted}>Interest is available while the server draw window is open.</Text><View style={s.row}><View style={{flex:1}}><Button title="Interested" onPress={()=>interest(true)} disabled={busy}/></View><View style={{flex:1}}><Button title="Not interested" secondary onPress={()=>interest(false)} disabled={busy}/></View></View></Card>}
+ {drawOpened&&state?.participants?.length>0&&<Card><Text style={s.section}>Eligible members</Text>{state.participants.map((p:any)=><Text key={p.id} style={{paddingVertical:6}}>{p.participant_sequence||p.participantSequence} · {p.interest_status||p.interestStatus}</Text>)}</Card>}
+ {operate&&drawOpened&&drawStatus!=='COMPLETED'&&<Button title={bypass?'Run Draw Now (TEST)':'Run Draw'} onPress={run} disabled={busy}/>} 
+ {state?.winner&&<Card><Text style={s.section}>Winner selected</Text><Text style={{fontSize:20,fontWeight:'800'}}>{memberName(winnerId)}</Text><Text style={s.muted}>Payout: {money(payout)}</Text><Text style={s.muted}>Result: {state.winner.result_reference||'—'}</Text></Card>}
+ {state?.winner&&<Card><Text style={s.section}>Winner payout settlement</Text>{winnerPayout?<><View style={s.row}><View style={{flex:1}}><Text style={s.muted}>Amount</Text><Text style={{fontSize:22,fontWeight:'900'}}>{money(winnerPayout.amount??payout)}</Text></View><View style={{flex:1}}><Text style={s.muted}>Status</Text><Badge tone={winnerPayout.status==='SETTLED'?'green':'orange'}>{String(winnerPayout.status||'PENDING')}</Badge></View></View><Text style={s.muted}>Winner: {winnerPayout.recipient_name||memberName(winnerId)}</Text>{winnerPayout.status!=='SETTLED'&&settleAllowed&&<><Text style={{fontWeight:'800',marginTop:12}}>Payment method</Text><View style={s.row}>{['CASH','UPI','BANK_TRANSFER'].map(x=><Button key={x} title={x} secondary={method!==x} onPress={()=>setMethod(x)} disabled={settling}/>)}</View><Input label="Transaction / receipt reference" value={reference} onChangeText={setReference} placeholder="CASH-001 / UPI-123"/><Button title="Settle winner payout" onPress={settle} disabled={settling}/></>}{winnerPayout.status==='SETTLED'&&<Text style={s.success}>✓ Winner payout settled. You can now complete reconciliation and close the month.</Text>}{winnerPayout.status!=='SETTLED'&&!settleAllowed&&<Text style={s.danger}>You can view this payout, but your assigned role does not have payout-settlement permission.</Text>}</>:<Text style={s.danger}>Winner selected, but no payout record was returned for this month. Open Payouts / Settlement to inspect the register.</Text>}</Card>}
  </ScrollView></Screen>;
 }
