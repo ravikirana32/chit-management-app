@@ -1,0 +1,9 @@
+import{api}from'./client';
+export const operationsApi={policy:()=>api.get('/v1/operations/policy'),summary:(id:string)=>api.get(`/v1/operations/chits/${id}/summary`)};
+export const chitsApi={list:()=>api.get('/v1/chits'),get:(id:string)=>api.get(`/v1/chits/${id}`),create:(p:any)=>api.post('/v1/chits',p),saveSchedule:(id:string,p:any)=>api.put(`/v1/chits/${id}/month-schedule`,p),publish:(id:string)=>api.post(`/v1/chits/${id}/publish`),start:(id:string)=>api.post(`/v1/chits/${id}/start`)};
+export const agentApi={chit:(id:string)=>api.get(`/v1/agents/me/chits/${id}`)};
+export const participantsApi={list:(id:string)=>api.get(`/v1/chits/${id}/participants`)};
+export const auctionsApi={open:(c:string,p:any)=>api.post(`/v1/auctions/chits/${c}/open`,p),additionalOpen:(c:string,p:any)=>api.post(`/v1/auctions/chits/${c}/additional/open`,p),current:(c:string,m:string)=>api.get(`/v1/auctions/chits/${c}/months/${m}/current`),state:(id:string)=>api.get(`/v1/auctions/${id}/state`),bid:(id:string,p:any)=>api.post(`/v1/auctions/${id}/bids`,p),close:(id:string)=>api.post(`/v1/auctions/${id}/close`,{}),reopen:(id:string,p:any)=>api.post(`/v1/auctions/${id}/reopen`,p),finalize:(id:string)=>api.post(`/v1/auctions/${id}/finalize`,{}),savings:(c:string)=>api.get(`/v1/auctions/chits/${c}/savings`)};
+export const drawsApi={start:(c:string,p:any)=>api.post(`/v1/draws/chits/${c}/start`,p),get:(c:string,m:string)=>api.get(`/v1/draws/chits/${c}/months/${m}`),interest:(c:string,m:string,v:boolean)=>api.post(`/v1/draws/chits/${c}/months/${m}/interest`,{interested:v}),run:(c:string,m:string)=>api.post(`/v1/draws/chits/${c}/months/${m}/run`)};
+
+export const payoutsApi={list:(c:string)=>api.get(`/v1/payouts/chits/${c}`),settle:(id:string,p:any)=>api.post(`/v1/payouts/${id}/settle`,p),addSettlement:(id:string,p:any)=>api.post(`/v1/payouts/${id}/settlements`,p)};

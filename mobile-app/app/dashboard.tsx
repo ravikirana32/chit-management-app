@@ -1,7 +1,8 @@
 import React,{useCallback,useEffect,useState}from'react';
 import{Alert,RefreshControl,ScrollView,Text,View}from'react-native';
 import{router}from'expo-router';
-import{dashboardApi,chitsApi,usersApi,participantsApi,agentApi}from'@/src/api/all';
+import{dashboardApi,chitsApi,usersApi,participantsApi}from'@/src/api/all';
+import{agentApi}from'@/src/api/agent';
 import{Button,Card,Loading,Screen,Stat,Badge,s}from'@/src/components/UI';
 import{useAuth}from'@/src/state/Auth';
 import{isAdmin,isAgent,isMember}from'@/src/state/roles';
