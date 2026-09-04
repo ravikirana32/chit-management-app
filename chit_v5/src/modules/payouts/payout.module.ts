@@ -12,7 +12,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 @UseGuards(JwtAuthGuard)
 @Controller({ path: 'payouts', version: '1' })
 class PayoutController {
-  constructor(private readonly service: PayoutService) {}
+  constructor(private readonly service: PayoutFundedLaterService) {}
 
   @Get('chits/:chitId')
   @ApiOperation({ summary: 'List payouts for a chit' })
