@@ -46,22 +46,23 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
         if (adminAccess.length) {
           // Admin may run the draw without being the chit creator.
         } else {
-        const [agentAccess]: any = await this.db.query(
-          `SELECT 1
-           FROM chit_agent_assignments ca
-           JOIN agents ag ON ag.id=ca.agent_id
-           WHERE ca.chit_id=:chitId
-             AND ag.user_id=:userId
-             AND ca.active=true
-             AND ca.can_run_draw=true
-             AND ag.status='ACTIVE'
-           LIMIT 1`,
-          { replacements: { chitId, userId: actorUserId }, transaction },
-        );
-        if (!agentAccess.length)
-          throw new ConflictException('Fixed draw permission is required for this chit');
+          const [agentAccess]: any = await this.db.query(
+            `SELECT 1
+             FROM chit_agent_assignments ca
+             JOIN agents ag ON ag.id=ca.agent_id
+             WHERE ca.chit_id=:chitId
+               AND ag.user_id=:userId
+               AND ca.active=true
+               AND ca.can_run_draw=true
+               AND ag.status='ACTIVE'
+             LIMIT 1`,
+            { replacements: { chitId, userId: actorUserId }, transaction },
+          );
+          if (!agentAccess.length)
+            throw new ConflictException('Fixed draw permission is required for this chit');
         }
-        }
+      }
+
       if (m.chit_type !== 'FIXED_DRAW')
         throw new BadRequestException('This endpoint is only for FIXED_DRAW chits');
       if (m.month_type === 'AGENT_CHIT')
@@ -240,6 +241,7 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
       return {
         success: true,
         drawId: draw.id,
+        winnerParticipantId: winnerId,
         revealStatus: reveal?.reveal_status,
         revealStartedAt: reveal?.reveal_started_at,
         revealEndsAt: reveal?.reveal_ends_at,
@@ -259,9 +261,8 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
           'Winner remains active and continues future contributions.',
         nextStep:
           'Collect and verify the monthly contributions, then settle the pending payout.',
-
         randomSource: 'node:crypto.randomInt',
-        rule: 'Winner remains active and continues future contributions; previous winners are excluded from later draws.',      };
+      };
     });
   }
 }
