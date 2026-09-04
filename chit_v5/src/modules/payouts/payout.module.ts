@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PayoutService } from './payout.service';
 import { PayoutFundedLaterService } from './payout-funded-later.service';
 import { SettlePayoutDto } from './dto/settle-payout.dto';
+import { PartialSettlementDto } from './dto/partial-settlement.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
@@ -17,6 +18,16 @@ class PayoutController {
   @ApiOperation({ summary: 'List payouts for a chit' })
   list(@Param('chitId') chitId: string, @CurrentUser() user: any) {
     return this.service.list(chitId, user.sub);
+  }
+
+  @Post(':payoutId/settlements')
+  @ApiOperation({ summary: 'Record a full or partial payout settlement; multiple settlement methods are supported.' })
+  addSettlement(
+    @Param('payoutId') payoutId: string,
+    @Body() dto: PartialSettlementDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.service.addPartialSettlement(payoutId, user.sub, dto);
   }
 
   @Post(':payoutId/settle')

@@ -18,35 +18,7 @@ export class MonthCloseService {
   if(!access.length)throw new ConflictException('Month close permission is required for this chit');
   if(m.status==='LOCKED')return m;if(m.status!=='COMPLETED')throw new ConflictException('Month can only be locked after successful auction/draw completion');
   const [open]:any=await this.sequelize.query(`SELECT COUNT(*)::int AS count FROM contribution_obligations WHERE chit_month_id=:monthId AND status IN('DUE','PENDING','PARTIAL','OVERDUE','RECOVERY_PLAN')`,{replacements:{monthId},transaction});if(Number(open[0].count)>0)throw new ConflictException('Cannot lock month with unresolved contribution obligations');
-  // AGENT_CHIT has a single effective payout. If an older release left a
-  // duplicate PENDING row after the agent payout was successfully settled,
-  // supersede that stale row so it cannot block financial month close.
-  await this.sequelize.query(
-   `UPDATE payouts stale
-    SET status='FAILED',
-        paid_at=NULL,
-        notes=CONCAT(COALESCE(stale.notes,''),' | SUPERSEDED_BY_SETTLED_PAYOUT:',settled.id),
-        updated_at=NOW()
-    FROM payouts settled
-    JOIN chit_months sm ON sm.id=settled.chit_month_id
-    LEFT JOIN agents sa ON sa.id=sm.agent_id
-    WHERE stale.chit_month_id=:monthId
-      AND stale.status='PENDING'
-      AND stale.id<>settled.id
-      AND sm.month_type='AGENT_CHIT'
-      AND settled.status='SETTLED'
-      AND (
-        stale.notes LIKE 'AGENT_CHIT:%'
-        OR (sm.agent_id IS NOT NULL AND stale.recipient_agent_id=sm.agent_id)
-        OR (sa.user_id IS NOT NULL AND stale.recipient_user_id=sa.user_id)
-      )
-      AND (
-        settled.notes LIKE 'AGENT_CHIT:%'
-        OR (sm.agent_id IS NOT NULL AND settled.recipient_agent_id=sm.agent_id)
-        OR (sa.user_id IS NOT NULL AND settled.recipient_user_id=sa.user_id)
-      )`,
-   {replacements:{monthId},transaction});
-  const [payout]:any=await this.sequelize.query(`SELECT COUNT(*)::int AS count FROM payouts WHERE chit_month_id=:monthId AND status='PENDING'`,{replacements:{monthId},transaction});if(Number(payout[0].count)>0)throw new ConflictException('Cannot lock month with pending payout');
+  const [payout]:any=await this.sequelize.query(`SELECT COUNT(*)::int AS count FROM payouts WHERE chit_month_id=:monthId AND status IN ('PENDING','PARTIALLY_SETTLED')`,{replacements:{monthId},transaction});if(Number(payout[0].count)>0)throw new ConflictException('Cannot lock month with unresolved payout. Complete all payout settlements before locking the month');
   const [updated]:any=await this.sequelize.query(`UPDATE chit_months SET status='LOCKED',locked_at=NOW(),locked_by=:userId,updated_at=NOW() WHERE id=:monthId RETURNING *`,{replacements:{monthId,userId},transaction});return updated[0];
  });}
 }
