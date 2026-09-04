@@ -1,26 +1,25 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Text, View } from 'react-native';
-import { Card, s } from './UI';
-import { joinWinnerReveal } from '@/src/realtime/winner-reveal';
-import { money } from '@/src/lib/format';
+import React,{useEffect,useRef,useState}from'react';
+import{Animated,Easing,Text,View}from'react-native';
+import{Card,s}from'./UI';
+import{joinWinnerReveal}from'@/src/realtime/winner-reveal';
+import{money}from'@/src/lib/format';
 
-type Props = { kind:'DRAW'|'AUCTION'; id:string; state:any; reload:()=>Promise<void>; payoutAmount?:number; };
+type Props={kind:'DRAW'|'AUCTION';id:string;state:any;reload:()=>Promise<void>;payoutAmount?:number};
+const particleOffsets=[[-105,-120,-25],[-65,-155,18],[-20,-175,-8],[30,-165,14],[78,-145,-18],[112,-105,24],[-125,-55,12],[125,-45,-12]];
 
 export default function WinnerReveal({kind,id,state,reload,payoutAmount}:Props){
-  const [now,setNow]=useState(Date.now());
-  const [revealed,setRevealed]=useState(Boolean(state?.revealStatus==='REVEALED'));
-  const [winner,setWinner]=useState<any>(state?.winner??null);
-  const pulse=useRef(new Animated.Value(0)).current;
-  const ends=state?.revealEndsAt?new Date(state.revealEndsAt).getTime():0;
-  useEffect(()=>setRevealed(String(state?.revealStatus||'').toUpperCase()==='REVEALED'),[state?.revealStatus]);
-  useEffect(()=>{ if(revealed)return; const t=setInterval(()=>setNow(Date.now()),250); return()=>clearInterval(t)},[revealed]);
-  useEffect(()=>{ if(revealed)return; const t=setInterval(()=>{reload()},2000); return()=>clearInterval(t)},[revealed,reload]);
-  useEffect(()=>{ if(revealed)return; const loop=Animated.loop(Animated.sequence([Animated.timing(pulse,{toValue:1,duration:900,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),Animated.timing(pulse,{toValue:0,duration:900,easing:Easing.inOut(Easing.ease),useNativeDriver:true})]));loop.start();return()=>loop.stop()},[revealed]);
-  useEffect(()=>{ let cleanup:undefined|(()=>void); joinWinnerReveal(kind,id,async(data)=>{setRevealed(false);await reload()},async(data)=>{setWinner(data?.winner??null);setRevealed(true);await reload()}).then(fn=>cleanup=fn); return()=>cleanup?.()},[kind,id]);
-  useEffect(()=>{ if(!revealed&&ends&&now>=ends){ reload(); } },[now,ends,revealed]);
-  const remaining=Math.max(0,Math.ceil((ends-now)/1000));
-  const scale=1+Number(pulse)*0.08;
-  if(!state?.revealStatus||String(state.revealStatus).toUpperCase()==='NONE')return null;
-  if(!revealed)return <Card><View style={{alignItems:'center',paddingVertical:18}}><Text style={{fontSize:30}}>🎲</Text><Text style={{fontSize:21,fontWeight:'900',marginTop:6}}>{kind==='AUCTION'?'AUCTION WINNER':'WINNER'} REVEAL</Text><Animated.View style={{transform:[{scale}],marginVertical:18}}><Text style={{fontSize:52,fontWeight:'900'}}>{remaining}</Text></Animated.View><Text style={s.muted}>The winner is securely selected. The result will be revealed when the server countdown ends.</Text></View></Card>;
-  return <Card><View style={{alignItems:'center',paddingVertical:20}}><Text style={{fontSize:44}}>🏆</Text><Text style={{fontSize:15,fontWeight:'800',marginTop:8}}>WINNER</Text><Text style={{fontSize:27,fontWeight:'900',marginTop:4}}>{winner?.member_name||state?.winner?.member_name||'Winner'}</Text>{(winner?.member_mobile||state?.winner?.member_mobile)&&<Text style={s.muted}>{winner?.member_mobile||state?.winner?.member_mobile}</Text>}{payoutAmount!=null&&<Text style={{fontSize:24,fontWeight:'900',marginTop:12}}>{money(payoutAmount)}</Text>}<Text style={s.muted}>Congratulations! The winner remains an active member and continues future contributions.</Text></View></Card>;
+ const[clock,setClock]=useState(Date.now()); const[revealed,setRevealed]=useState(String(state?.revealStatus??state?.reveal_status??'').toUpperCase()==='REVEALED');
+ const[winner,setWinner]=useState<any>(state?.winner??null); const pulse=useRef(new Animated.Value(0)).current; const celebration=useRef(new Animated.Value(0)).current;
+ const endsRaw=state?.revealEndsAt??state?.reveal_ends_at; const startsRaw=state?.revealStartedAt??state?.reveal_started_at;
+ const ends=endsRaw?new Date(endsRaw).getTime():0; const starts=startsRaw?new Date(startsRaw).getTime():0;
+ useEffect(()=>{const status=String(state?.revealStatus??state?.reveal_status??'').toUpperCase();setRevealed(status==='REVEALED');if(state?.winner)setWinner(state.winner)},[state?.revealStatus,state?.reveal_status,state?.winner]);
+ useEffect(()=>{if(revealed)return;const t=setInterval(()=>setClock(Date.now()),250);return()=>clearInterval(t)},[revealed]);
+ useEffect(()=>{if(revealed)return;const t=setInterval(()=>{reload().catch(()=>{})},2000);return()=>clearInterval(t)},[revealed,reload]);
+ useEffect(()=>{if(revealed)return;const loop=Animated.loop(Animated.sequence([Animated.timing(pulse,{toValue:1,duration:700,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),Animated.timing(pulse,{toValue:0,duration:700,easing:Easing.inOut(Easing.ease),useNativeDriver:true})]));loop.start();return()=>loop.stop()},[revealed,pulse]);
+ useEffect(()=>{let cleanup:(()=>void)|undefined;joinWinnerReveal(kind,id,async()=>{await reload()},async(data)=>{setWinner(data?.winner??null);setRevealed(true);await reload()}).then(fn=>cleanup=fn).catch(()=>{});return()=>cleanup?.()},[kind,id,reload]);
+ useEffect(()=>{if(!revealed)return;celebration.setValue(0);const a=Animated.sequence([Animated.timing(celebration,{toValue:1,duration:900,easing:Easing.out(Easing.back(1.2)),useNativeDriver:true}),Animated.timing(celebration,{toValue:.2,duration:500,useNativeDriver:true})]);a.start();return()=>a.stop()},[revealed,celebration]);
+ if(!state?.revealStatus&&!state?.reveal_status)return null; const status=String(state?.revealStatus??state?.reveal_status??'').toUpperCase(); if(status==='NONE')return null;
+ const duration=Number(state?.revealDurationSeconds??state?.reveal_duration_seconds??40); const remaining=ends?Math.max(0,Math.ceil((ends-clock)/1000)):Math.max(0,duration-Math.max(0,Math.floor((clock-(starts||clock))/1000))); const progress=Math.max(0,Math.min(1,1-remaining/Math.max(1,duration))); const scale=1+Number(pulse)*.08; const shown=winner??state?.winner;
+ if(!revealed)return <Card><View style={{alignItems:'center',paddingVertical:24}}><Text style={{fontSize:28}}>🎲</Text><Text style={{fontSize:21,fontWeight:'900',marginTop:8}}>{kind==='AUCTION'?'AUCTION WINNER':'WINNER'} REVEAL</Text><Animated.View style={{transform:[{scale}],marginTop:18,alignItems:'center'}}><Text style={{fontSize:64,fontWeight:'900'}}>{remaining}</Text><Text style={{fontSize:14,fontWeight:'800',letterSpacing:1}}>SECONDS</Text></Animated.View><View style={{width:'86%',height:8,borderRadius:8,backgroundColor:'#E8E8EE',marginTop:16,overflow:'hidden'}}><View style={{width:`${Math.round(progress*100)}%`,height:'100%',backgroundColor:'#5B3CC4'}}/></View><Text style={[s.muted,{textAlign:'center',marginTop:18}]}>The winner is securely selected. Everyone sees the same server-controlled countdown.</Text></View></Card>;
+ return <Card><View style={{alignItems:'center',paddingVertical:24,minHeight:300}}>{particleOffsets.map((p,i)=><Animated.Text key={i} style={{position:'absolute',fontSize:22,opacity:celebration.interpolate({inputRange:[0,.2,1],outputRange:[0,.9,0]}),transform:[{translateX:celebration.interpolate({inputRange:[0,1],outputRange:[0,p[0]]})},{translateY:celebration.interpolate({inputRange:[0,1],outputRange:[15,p[1]]})},{rotate:`${p[2]}deg`}]}}>{i%2===0?'🎉':'✨'}</Animated.Text>)}<Animated.View style={{transform:[{scale:celebration.interpolate({inputRange:[0,.2,1],outputRange:[.7,1,1.08]})}]}}><Text style={{fontSize:62}}>🏆</Text></Animated.View><Text style={{fontSize:16,fontWeight:'900',marginTop:6,letterSpacing:1}}>WINNER</Text><Text style={{fontSize:32,fontWeight:'900',marginTop:4}}>{shown?.member_name||shown?.memberName||'Winner'}</Text>{(shown?.member_mobile||shown?.memberMobile)&&<Text style={s.muted}>{shown?.member_mobile||shown?.memberMobile}</Text>}{payoutAmount!=null&&<Text style={{fontSize:26,fontWeight:'900',marginTop:14}}>{money(payoutAmount)}</Text>}<Text style={{fontSize:20,fontWeight:'900',marginTop:14}}>🎉 Congratulations! 🎉</Text><Text style={[s.muted,{textAlign:'center',marginTop:8}]}>The winner remains an active member and continues future contributions.</Text></View></Card>;
 }
