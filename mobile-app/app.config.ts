@@ -6,6 +6,7 @@ const config: ExpoConfig = {
   orientation: "portrait",
   scheme: "chitmanagement",
   userInterfaceStyle: "light",
+  web: { bundler: "metro" },
   plugins: ["expo-router"],
   android: { package: "com.ravikirana.chitmanagement" },
   ios: { bundleIdentifier: "com.ravikirana.chitmanagement" },
