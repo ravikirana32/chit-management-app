@@ -2,11 +2,13 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Sequelize } from 'sequelize-typescript';
 import { randomInt } from 'crypto';
 import { FixedDrawService } from './fixed-draw.service';
+import { WinnerRevealService } from '../../common/enterprise-hardening/winner-reveal.service';
+import { OperationSchedulePolicyService } from '../../common/enterprise-hardening/operation-schedule-policy.service';
 
 @Injectable()
 export class FixedDrawFundedLaterService extends FixedDrawService {
-  constructor(private readonly db: Sequelize) {
-    super(db);
+  constructor(private readonly db: Sequelize, private readonly winnerReveal: WinnerRevealService, schedulePolicy: OperationSchedulePolicyService) {
+    super(db, schedulePolicy);
   }
 
   /**
@@ -80,7 +82,7 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
 
       const now = new Date();
       if (draw.scheduled_at && now < new Date(draw.scheduled_at))
-        throw new ConflictException('Draw time has not arrived');
+        this.schedulePolicy?.assertScheduleAllowed(false, 'Draw time has not arrived');
 
       const [eligible]: any = await this.db.query(
         `SELECT dp.*, cp.user_id
@@ -158,12 +160,11 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
 
       await this.db.query(
         `UPDATE draws
-         SET status='COMPLETED',
-             completed_at=NOW(),
-             updated_at=NOW()
+         SET status='COMPLETED', completed_at=NOW(), updated_at=NOW()
          WHERE id=:drawId`,
         { replacements: { drawId: draw.id }, transaction },
       );
+      const reveal = await this.winnerReveal.start('DRAW', draw.id, transaction);
 
       /*
        * Month becomes COMPLETED operationally, but is NOT financially locked.
@@ -239,8 +240,10 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
       return {
         success: true,
         drawId: draw.id,
-        winnerParticipantId: winnerId,
-        winner: winnerRows[0],
+        revealStatus: reveal?.reveal_status,
+        revealStartedAt: reveal?.reveal_started_at,
+        revealEndsAt: reveal?.reveal_ends_at,
+        revealDurationSeconds: reveal?.reveal_duration_seconds,
         payout: payoutRows[0],
         eligibleCount: eligible.length,
         interestedCount: interested.length,
@@ -256,7 +259,9 @@ export class FixedDrawFundedLaterService extends FixedDrawService {
           'Winner remains active and continues future contributions.',
         nextStep:
           'Collect and verify the monthly contributions, then settle the pending payout.',
-      };
+
+        randomSource: 'node:crypto.randomInt',
+        rule: 'Winner remains active and continues future contributions; previous winners are excluded from later draws.',      };
     });
   }
 }
