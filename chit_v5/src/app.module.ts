@@ -27,6 +27,8 @@ import { AdminManagementModule } from './modules/admin-management/admin-manageme
 import { InvitationsModule } from './modules/invitations/invitations.module';
 import { EnterpriseHardeningModule } from './common/enterprise-hardening/enterprise-hardening.module';
 import { AdminLifecycleModule } from './modules/admin-lifecycle/admin-lifecycle.module';
+import { ChitImportModule } from './modules/chit-import/chit-import.module';
+import { RunningChitOnboardingModule } from './modules/running-chit-onboarding/running-chit-onboarding.module';
 
 @Module({
   imports: [
@@ -58,6 +60,8 @@ import { AdminLifecycleModule } from './modules/admin-lifecycle/admin-lifecycle.
     PayoutModule,
     PaymentsModule,
     DrawsModule,
+    ChitImportModule,
+    RunningChitOnboardingModule,
   ],
 })
 export class AppModule {}
