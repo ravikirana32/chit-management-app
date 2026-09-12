@@ -8,17 +8,17 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.getHttpAdapter().get('/deployment-check', (_req, res) => {
-  res.json({
-    status: 'ok',
-    message: 'LATEST CODE IS RUNNING',
-    commit: 'ec37b10680b84746d2e1ef40b9b028d1e1c5b461',
-    timestamp: new Date().toISOString(),
+    res.json({
+      status: 'ok',
+      message: 'LATEST CODE IS RUNNING',
+      commit: 'ec37b10680b84746d2e1ef40b9b028d1e1c5b461',
+      timestamp: new Date().toISOString(),
+    });
   });
-});
 
   app.getHttpAdapter().get('/api/v1/db-diagnostic', async (_req, res) => {
     const rawUrl = process.env.DATABASE_URL?.trim();
-  
+
     if (!rawUrl) {
       return res.json({
         status: 'error',
@@ -26,9 +26,9 @@ async function bootstrap() {
         databaseUrl: 'missing',
       });
     }
-  
+
     let parsed: URL;
-  
+
     try {
       parsed = new URL(rawUrl);
     } catch {
@@ -38,15 +38,15 @@ async function bootstrap() {
         databaseUrl: 'invalid',
       });
     }
-  
+
     const host = parsed.hostname;
     const port = Number(parsed.port || 5432);
-  
+
     const dns = await import('node:dns/promises');
     const net = await import('node:net');
-  
+
     let dnsResult;
-  
+
     try {
       dnsResult = await dns.lookup(host);
     } catch (error: any) {
@@ -59,19 +59,17 @@ async function bootstrap() {
         message: error?.message ?? null,
       });
     }
-  
+
     const tcp = await new Promise<any>((resolve) => {
       const socket = net.createConnection({ host, port });
-  
+
       socket.setTimeout(10000);
-  
+
       socket.once('connect', () => {
         socket.destroy();
-        resolve({
-          status: 'ok',
-        });
+        resolve({ status: 'ok' });
       });
-  
+
       socket.once('timeout', () => {
         socket.destroy();
         resolve({
@@ -79,7 +77,7 @@ async function bootstrap() {
           code: 'ETIMEDOUT',
         });
       });
-  
+
       socket.once('error', (error: any) => {
         socket.destroy();
         resolve({
@@ -89,10 +87,10 @@ async function bootstrap() {
         });
       });
     });
-  
+
     return res.json({
       status: tcp.status === 'ok' ? 'ok' : 'error',
-      stage: tcp.status === 'ok' ? 'tcp' : 'tcp',
+      stage: 'tcp',
       target: {
         host,
         port,
@@ -105,6 +103,40 @@ async function bootstrap() {
       tcp,
       timestamp: new Date().toISOString(),
     });
+  });
+
+  // CORS for Expo Web/local development and configured production origins.
+  const configuredOrigins = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  const allowedOrigins = new Set([
+    'http://localhost:8081',
+    'http://127.0.0.1:8081',
+    ...configuredOrigins,
+  ]);
+
+  app.enableCors({
+    origin: (
+      origin: string | undefined,
+      callback: (error: Error | null, allow?: boolean) => void,
+    ) => {
+      if (!origin || allowedOrigins.has(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`CORS origin not allowed: ${origin}`), false);
+    },
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'X-Request-Id',
+    ],
   });
 
   app.setGlobalPrefix(process.env.API_PREFIX ?? 'api');
