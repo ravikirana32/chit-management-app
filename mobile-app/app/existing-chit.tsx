@@ -1,152 +1,50 @@
 import React,{useMemo,useState}from'react';
 import{Alert,ScrollView,Text,View}from'react-native';
 import{router}from'expo-router';
-import{chitImportApi}from'@/src/api/all';
-import{Button,Card,Input,Screen,s}from'@/src/components/UI';
+import{chitsApi,chitImportApi,participantsApi}from'@/src/api/all';
+import{Badge,Button,Card,Input,Screen,s}from'@/src/components/UI';
 import{errMsg,money}from'@/src/lib/format';
-import{useAuth}from'@/src/state/Auth';
+
+type Member={memberId:string;name:string;mobile?:string;upiId?:string;sequence:number};
+type Payment={monthNumber:number;memberId:string;amount:string;method:'CASH'|'UPI'|'BANK_TRANSFER'|'OTHER';reference:string;notes:string};
+type PayoutComponent={amount:string;method:'CASH'|'UPI'|'BANK_TRANSFER'|'OTHER';reference:string;notes:string};
+type Month={monthNumber:number;amount:string;completedAt:string;winnerMemberId:string;winnerName:string;winnerMobile:string;payoutAmount:string;openingSavings:string;closingSavings:string;collectedAmount:string;discountAmount:string;winnerReference:string;notes:string;payoutComponents:PayoutComponent[]};
+
+const blankMonth=(n:number):Month=>({monthNumber:n,amount:'',completedAt:'',winnerMemberId:'',winnerName:'',winnerMobile:'',payoutAmount:'',openingSavings:n===1?'0':'',closingSavings:'',collectedAmount:'',discountAmount:'',winnerReference:'',notes:'',payoutComponents:[]});
+const blankPayment=(monthNumber:number,memberId:string):Payment=>({monthNumber,memberId,amount:'',method:'CASH',reference:'',notes:''});
+const num=(v:any)=>Number(v||0);
+const money2=(v:any)=>num(v).toFixed(2);
 
 export default function ExistingChit(){
- const{user}=useAuth();
- const[chitId,setChitId]=useState('');
- const[currentMonth,setCurrentMonth]=useState('');
- const[chitName,setChitName]=useState('');
- const[chitType,setChitType]=useState<'FIXED_DRAW'|'AUCTION'|'AGENT_CHIT'>('FIXED_DRAW');
- const[json,setJson]=useState('');
- const[busy,setBusy]=useState(false);
- const[review,setReview]=useState<any>();
+ const[chitId,setChitId]=useState('');const[nextMonth,setNextMonth]=useState('');const[monthsCount,setMonthsCount]=useState('');const[chit,setChit]=useState<any>();const[members,setMembers]=useState<Member[]>([]);const[months,setMonths]=useState<Month[]>([]);const[payments,setPayments]=useState<Payment[]>([]);const[step,setStep]=useState(1);const[busy,setBusy]=useState(false);const[review,setReview]=useState<any>();const[batchId,setBatchId]=useState('');
 
- const example=useMemo(()=>JSON.stringify({
-   chitId:'EXISTING_CHIT_UUID',
-   currentMonthNumber:4,
-   members:[
-     {memberId:'USER_UUID_1',name:'Member 1',sequence:1},
-     {memberId:'USER_UUID_2',name:'Member 2',sequence:2}
-   ],
-   months:[
-     {
-       monthNumber:1,amount:'10000',collectedAmount:'20000',
-       winnerMemberId:'USER_UUID_1',winnerName:'Member 1',
-       payoutAmount:'15000',openingSavings:'0',closingSavings:'5000',
-       completedAt:'2026-06-05T00:00:00.000Z'
-     },
-     {
-       monthNumber:2,amount:'10000',collectedAmount:'20000',
-       winnerMemberId:'USER_UUID_2',winnerName:'Member 2',
-       payoutAmount:'14000',openingSavings:'5000',closingSavings:'11000',
-       completedAt:'2026-07-05T00:00:00.000Z'
-     },
-     {
-       monthNumber:3,amount:'10000',collectedAmount:'20000',
-       payoutAmount:'13000',openingSavings:'11000',closingSavings:'18000',
-       completedAt:'2026-08-05T00:00:00.000Z'
-     }
-   ],
-   payments:[
-     {monthNumber:1,memberId:'USER_UUID_1',amount:'10000',method:'CASH',reference:'CASH-M1-1'},
-     {monthNumber:1,memberId:'USER_UUID_2',amount:'10000',method:'UPI',reference:'UPI-M1-2'},
-     {monthNumber:2,memberId:'USER_UUID_1',amount:'6000',method:'CASH',reference:'CASH-M2-1'},
-     {monthNumber:2,memberId:'USER_UUID_1',amount:'4000',method:'UPI',reference:'UPI-M2-1'},
-     {monthNumber:2,memberId:'USER_UUID_2',amount:'10000',method:'UPI',reference:'UPI-M2-2'}
-   ]
- },null,2),[]);
+ const historicalCount=Math.max(0,num(nextMonth)-1);
+ const loadChit=async()=>{if(!chitId.trim())return Alert.alert('Chit ID required','Enter the existing chit UUID.');setBusy(true);try{const r=await chitsApi.get(chitId.trim());const d=r.data?.data??r.data;setChit(d);const ps=await participantsApi.list(chitId.trim());const rows=ps.data?.data??ps.data;const source=Array.isArray(rows)?rows:rows?.participants||[];setMembers(source.map((x:any,i:number)=>({memberId:String(x.user_id||x.userId||x.id),name:String(x.name||x.user_name||`Member ${i+1}`),mobile:x.mobile||x.mobile_number,upiId:x.upiId||x.upi_id,sequence:Number(x.participant_sequence||x.sequence||i+1)})));setStep(2)}catch(e){Alert.alert('Unable to load chit',errMsg(e))}finally{setBusy(false)}};
+ const prepareMonths=()=>{const n=Math.max(1,num(nextMonth)-1);if(!num(nextMonth)||num(nextMonth)<=1)return Alert.alert('Next active month required','Enter a month number greater than 1.');setMonths(Array.from({length:n},(_,i)=>blankMonth(i+1)));setPayments([]);setStep(3)};
+ const addPayment=(monthNumber:number,memberId:string)=>setPayments(x=>[...x,blankPayment(monthNumber,memberId)]);
+ const updatePayment=(idx:number,key:keyof Payment,value:string)=>setPayments(x=>x.map((p,i)=>i===idx?{...p,[key]:value}:p));
+ const removePayment=(idx:number)=>setPayments(x=>x.filter((_,i)=>i!==idx));
+ const updateMonth=(idx:number,key:keyof Month,value:string)=>setMonths(x=>x.map((m,i)=>i===idx?{...m,[key]:value}:m));
+ const addPayout=(mi:number)=>setMonths(x=>x.map((m,i)=>i===mi?{...m,payoutComponents:[...m.payoutComponents,{amount:'',method:'CASH',reference:'',notes:''}]}:m));
+ const updatePayout=(mi:number,pi:number,key:keyof PayoutComponent,value:string)=>setMonths(x=>x.map((m,i)=>i===mi?{...m,payoutComponents:m.payoutComponents.map((p,j)=>j===pi?{...p,[key]:value}:p)}:m));
+ const removePayout=(mi:number,pi:number)=>setMonths(x=>x.map((m,i)=>i===mi?{...m,payoutComponents:m.payoutComponents.filter((_,j)=>j!==pi)}:m));
+ const validateLocal=()=>{const errors:string[]=[];const ids=new Set(members.map(x=>x.memberId));months.forEach(m=>{if(!m.amount||num(m.amount)<=0)errors.push(`Month ${m.monthNumber}: contribution amount required`);const pts=m.payoutComponents.filter(x=>num(x.amount)>0);if(m.payoutAmount&&pts.length&&Math.abs(pts.reduce((a,p)=>a+num(p.amount),0)-num(m.payoutAmount))>.01)errors.push(`Month ${m.monthNumber}: payout components must equal payout amount`);if(m.openingSavings&&num(m.openingSavings)<0)errors.push(`Month ${m.monthNumber}: opening savings cannot be negative`);if(m.closingSavings&&num(m.closingSavings)<0)errors.push(`Month ${m.monthNumber}: closing savings cannot be negative`);});payments.forEach(p=>{if(!ids.has(p.memberId))errors.push(`Payment has unknown member ${p.memberId}`);if(num(p.amount)<=0)errors.push(`Payment for month ${p.monthNumber} must be greater than zero`)});return errors};
+ const build=()=>({chitId:chitId.trim(),currentMonthNumber:num(nextMonth),members,months, payments});
+ const validate=async()=>{const e=validateLocal();if(e.length)return Alert.alert('Review required',e.join('\n'));setBusy(true);try{const r=await chitImportApi.validate(build());const d=r.data?.data??r.data;setReview(d);if(!d.valid)Alert.alert('Validation failed',(d.errors||[]).join('\n'));else{Alert.alert('Validated','Historical data passed API validation.');setStep(5)}}catch(x){Alert.alert('Validation failed',errMsg(x))}finally{setBusy(false)}};
+ const createBatch=async()=>{setBusy(true);try{const r=await chitImportApi.createBatch(build());const d=r.data?.data??r.data;if(!d?.id)throw new Error(r.data?.message||'Unable to create import batch');await chitImportApi.review(String(d.id));setBatchId(String(d.id));const q=await chitImportApi.getBatch(String(d.id));setReview(q.data?.data??q.data);setStep(5)}catch(x){Alert.alert('Create batch failed',errMsg(x))}finally{setBusy(false)}};
+ const apply=()=>Alert.alert('Apply historical data?','Historical months will be locked and the selected next month will become active. Check the review carefully before continuing.',[{text:'Cancel',style:'cancel'},{text:'Apply',style:'default',onPress:async()=>{setBusy(true);try{const r=await chitImportApi.apply(batchId);const d=r.data?.data??r.data;if(!r.data?.success)throw new Error(r.data?.message||'Apply failed');Alert.alert('Running chit activated',`Month ${d.currentMonthNumber||nextMonth} is now active.`);router.replace({pathname:'/chit-detail',params:{chitId:chitId.trim()}})}catch(x){Alert.alert('Apply failed',errMsg(x))}finally{setBusy(false)}}}]);
 
- const parse=()=>{
-   try{
-     const p=JSON.parse(json);
-     if(!p.chitId)p.chitId=chitId;
-     if(!p.currentMonthNumber)p.currentMonthNumber=Number(currentMonth);
-     return p;
-   }catch{throw new Error('Enter valid JSON data.')}
- };
+ const totalExpected=months.reduce((a,m)=>a+num(m.amount)*members.length,0);const totalCollected=payments.reduce((a,p)=>a+num(p.amount),0);const totalPayout=months.reduce((a,m)=>a+num(m.payoutAmount),0);
 
- const validate=async()=>{
-   setBusy(true);
-   try{
-     const p=parse();
-     const r=await chitImportApi.validate(p);
-     setReview(r.data?.data??r.data);
-     if(!(r.data?.data?.valid??r.data?.valid))Alert.alert('Validation failed',(r.data?.data?.errors??[]).join('\n'));
-     else Alert.alert('Validated','Historical data is valid. You can create the review batch.');
-   }catch(e){Alert.alert('Validation failed',errMsg(e))}
-   finally{setBusy(false)}
- };
+ return <Screen title="Existing / Running Chit" subtitle={`Onboarding wizard · Step ${step} of 5`} back={()=>router.back()}><ScrollView keyboardShouldPersistTaps="handled">
+ <Card><Text style={s.section}>Step 1 · Select existing chit</Text><Input label="Existing chit ID" value={chitId} onChangeText={setChitId} placeholder="Chit UUID"/><Input label="Next active month number" value={nextMonth} onChangeText={setNextMonth} placeholder="4" keyboardType="number-pad"/><Text style={s.muted}>Historical months: {historicalCount}</Text>{chit&&<Badge tone="green">{String(chit.name||'Chit')} · {String(chit.chit_type||'')}</Badge>}<Button title="Load chit & members" onPress={loadChit} disabled={busy}/></Card>
 
- const create=async()=>{
-   setBusy(true);
-   try{
-     const p=parse();
-     const r=await chitImportApi.createBatch(p);
-     const d=r.data?.data??r.data;
-     if(!r.data?.success&&!d)throw new Error(r.data?.message||'Unable to create batch');
-     const id=d.id;
-     await chitImportApi.review(id);
-     setReview(await chitImportApi.getBatch(id).then(x=>x.data?.data??x.data));
-     Alert.alert('Ready to apply',`Import batch ${id} was created and reviewed. Verify the data before applying.`);
-   }catch(e){Alert.alert('Create batch failed',errMsg(e))}
-   finally{setBusy(false)}
- };
+ {step>=2&&<Card><Text style={s.section}>Step 2 · Members</Text><Text style={s.muted}>Existing participant records are loaded from the chit. Historical imports do not change the normal live participant workflow.</Text>{members.map(m=><Card key={m.memberId}><Text style={{fontWeight:'800'}}>{m.sequence}. {m.name}</Text><Text style={s.muted}>{m.mobile||'No mobile'}{m.upiId?` · ${m.upiId}`:''}</Text></Card>)}<Input label="Historical months to enter" value={monthsCount||String(historicalCount)} onChangeText={setMonthsCount} keyboardType="number-pad"/><Button title="Enter historical months" onPress={prepareMonths} disabled={busy||!members.length}/></Card>}
 
- const apply=async()=>{
-   if(!review?.id)return;
-   Alert.alert(
-     'Apply running chit history?',
-     'This will lock the historical months and activate the selected next month. This action should only be used after checking the historical records.',
-     [
-       {text:'Cancel',style:'cancel'},
-       {text:'Apply',onPress:async()=>{
-         setBusy(true);
-         try{
-           const r=await chitImportApi.apply(review.id);
-           const d=r.data?.data??r.data;
-           if(!r.data?.success)throw new Error(r.data?.message||'Apply failed');
-           Alert.alert('Running chit activated',d.message||`Month ${d.currentMonthNumber} is active.`);
-           router.replace({pathname:'/chit-detail',params:{chitId:String(d.chitId)}});
-         }catch(e){Alert.alert('Import failed',errMsg(e))}
-         finally{setBusy(false)}
-       }}
-     ]
-   );
- };
+ {step>=3&&months.map((m,mi)=><Card key={m.monthNumber}><View style={s.row}><Text style={s.section}>Month {m.monthNumber}</Text><Badge tone="green">HISTORICAL</Badge></View><Input label="Contribution / member" value={m.amount} onChangeText={v=>updateMonth(mi,'amount',v)} keyboardType="decimal-pad"/><Input label="Completed date (ISO)" value={m.completedAt} onChangeText={v=>updateMonth(mi,'completedAt',v)} placeholder="2026-08-05T00:00:00.000Z"/><Input label="Opening savings" value={m.openingSavings} onChangeText={v=>updateMonth(mi,'openingSavings',v)} keyboardType="decimal-pad"/><Input label="Closing savings" value={m.closingSavings} onChangeText={v=>updateMonth(mi,'closingSavings',v)} keyboardType="decimal-pad"/><Input label="Collected amount (summary)" value={m.collectedAmount} onChangeText={v=>updateMonth(mi,'collectedAmount',v)} keyboardType="decimal-pad"/><Input label="Winner member ID (optional)" value={m.winnerMemberId} onChangeText={v=>updateMonth(mi,'winnerMemberId',v)}/><Input label="Winner name" value={m.winnerName} onChangeText={v=>updateMonth(mi,'winnerName',v)}/><Input label="Winner mobile" value={m.winnerMobile} onChangeText={v=>updateMonth(mi,'winnerMobile',v)} keyboardType="phone-pad"/><Input label="Payout amount" value={m.payoutAmount} onChangeText={v=>updateMonth(mi,'payoutAmount',v)} keyboardType="decimal-pad"/><Input label="Auction discount (optional)" value={m.discountAmount} onChangeText={v=>updateMonth(mi,'discountAmount',v)} keyboardType="decimal-pad"/><Input label="Winner payout reference" value={m.winnerReference} onChangeText={v=>updateMonth(mi,'winnerReference',v)}/><Text style={s.section}>Collections</Text>{payments.filter(p=>p.monthNumber===m.monthNumber).map((p,idx)=>{const real=payments.indexOf(p);return <Card key={`${real}`}><Text style={{fontWeight:'700'}}>{members.find(x=>x.memberId===p.memberId)?.name||p.memberId}</Text><Input label="Amount" value={p.amount} onChangeText={v=>updatePayment(real,'amount',v)} keyboardType="decimal-pad"/><View style={s.row}><Button title="CASH" secondary={p.method!=='CASH'} onPress={()=>updatePayment(real,'method','CASH')}/><Button title="UPI" secondary={p.method!=='UPI'} onPress={()=>updatePayment(real,'method','UPI')}/></View><Input label="Reference" value={p.reference} onChangeText={v=>updatePayment(real,'reference',v)}/><Button title="Remove collection" secondary onPress={()=>removePayment(real)}/></Card>})}{members.map(mem=><Button key={mem.memberId} title={`Add collection · ${mem.name}`} secondary onPress={()=>addPayment(m.monthNumber,mem.memberId)}/>}<Text style={s.section}>Payout settlement</Text>{m.payoutComponents.map((p,pi)=><Card key={pi}><Input label="Component amount" value={p.amount} onChangeText={v=>updatePayout(mi,pi,'amount',v)} keyboardType="decimal-pad"/><View style={s.row}><Button title="CASH" secondary={p.method!=='CASH'} onPress={()=>updatePayout(mi,pi,'method','CASH')}/><Button title="UPI" secondary={p.method!=='UPI'} onPress={()=>updatePayout(mi,pi,'method','UPI')}/></View><Input label="Reference" value={p.reference} onChangeText={v=>updatePayout(mi,pi,'reference',v)}/><Button title="Remove payout component" secondary onPress={()=>removePayout(mi,pi)}/></Card>)}<Button title="Add payout component" secondary onPress={()=>addPayout(mi)}/><Input label="Month notes" value={m.notes} onChangeText={v=>updateMonth(mi,'notes',v)} multiline/></Card>)}
 
- return <Screen title="Existing / Running Chit" subtitle="Bring an already-running chit into the app" back={()=>router.back()}>
-   <ScrollView>
-     <Card>
-       <Text style={s.section}>How this works</Text>
-       <Text>Enter the existing chit ID and the next active month. Supply monthwise historical collections, winners, payouts and savings. Historical months are locked; the selected next month becomes ACTIVE.</Text>
-       <Text style={s.muted}>Do not invent missing figures. Leave unknown historical fields empty and add a note explaining what is unavailable.</Text>
-     </Card>
-     <Card>
-       <Input label="Existing chit ID" value={chitId} onChangeText={setChitId} placeholder="Chit UUID"/>
-       <Input label="Next active month number" value={currentMonth} onChangeText={setCurrentMonth} placeholder="4" keyboardType="number-pad"/>
-       <Input label="Optional label" value={chitName} onChangeText={setChitName} placeholder="Existing Chit"/>
-       <Text style={s.muted}>Chit type: {chitType}</Text>
-       <View style={s.row}>
-         {(['FIXED_DRAW','AUCTION','AGENT_CHIT'] as const).map(x=>
-           <Button key={x} title={x} secondary={chitType!==x} onPress={()=>setChitType(x)}/>
-         )}
-       </View>
-     </Card>
-     <Card>
-       <Text style={s.section}>Historical data JSON</Text>
-       <Text style={s.muted}>The API validates member IDs, month sequence, payments and payout component totals before any financial data is materialized.</Text>
-       <Input label="JSON" value={json} onChangeText={setJson} placeholder={example} multiline/>
-       <Button title="Validate history" onPress={validate} disabled={busy}/>
-       <Button title="Create & Review Import Batch" secondary onPress={create} disabled={busy}/>
-       <Button title="Load example structure" secondary onPress={()=>setJson(example)}/>
-     </Card>
-     {review&&<Card>
-       <Text style={s.section}>Import review</Text>
-       <Text>Status: {String(review.status||review.valid||'READY')}</Text>
-       {review.counts&&<Text>Members {review.counts.members} · Historical months {review.counts.historicalMonths} · Payments {review.counts.payments}</Text>}
-       <Text style={s.muted}>After apply, historical months are LOCKED and the next active month is opened for normal Fixed Draw / Auction / Agent Chit operations.</Text>
-       {review.id&&<Button title="Apply & Activate Running Chit" onPress={apply} disabled={busy}/>}
-     </Card>}
-     <Card>
-       <Text style={s.section}>Example financial chain</Text>
-       <Text>Month 1 closing savings → Month 2 opening savings → Month 2 closing savings → Month 3 opening savings.</Text>
-       <Text style={s.muted}>Existing contribution payments may be split into multiple CASH/UPI rows just like live payments.</Text>
-     </Card>
-   </ScrollView>
- </Screen>
+ {step>=3&&<Card><Text style={s.section}>Step 4 · Financial review</Text><Text>Members: {members.length}</Text><Text>Expected historical contributions: {money(totalExpected)}</Text><Text>Entered collection transactions: {money(totalCollected)}</Text><Text>Historical payouts: {money(totalPayout)}</Text><Text style={s.muted}>For split payments, keep separate CASH and UPI transaction rows. Do not use MIXED.</Text><Button title="Validate with API" onPress={validate} disabled={busy}/><Button title="Create & review import batch" secondary onPress={createBatch} disabled={busy}/></Card>}
+
+ {step>=5&&<Card><Text style={s.section}>Step 5 · Final review & activation</Text><Badge tone="green">{review?.status||'VALIDATED'}</Badge>{review?.counts&&<Text>Members {review.counts.members} · Historical months {review.counts.historicalMonths} · Payments {review.counts.payments}</Text>}<Text style={s.muted}>After apply: historical months are LOCKED; Month {nextMonth} becomes the operational current month.</Text><Button title="Apply & Activate Running Chit" onPress={apply} disabled={busy||!batchId}/></Card>}
+ </ScrollView></Screen>
 }
