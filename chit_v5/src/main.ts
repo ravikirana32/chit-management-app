@@ -117,17 +117,17 @@ async function bootstrap() {
     ...configuredOrigins,
   ]);
 
-  app.enableCors({
+app.enableCors({
     origin: (
       origin: string | undefined,
       callback: (error: Error | null, allow?: boolean) => void,
     ) => {
-      if (!origin || allowedOrigins.has(origin)) {
-        callback(null, true);
-        return;
-      }
+    if (!origin || allowedOrigins.has(origin)) {
+      callback(null, true);
+      return;
+    }
 
-      callback(new Error(`CORS origin not allowed: ${origin}`), false);
+    callback(new Error(`CORS origin not allowed: ${origin}`), false);
     },
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
@@ -136,9 +136,9 @@ async function bootstrap() {
       'Authorization',
       'X-Requested-With',
       'X-Request-Id',
+      'X-Client-Version',
     ],
   });
-
   app.setGlobalPrefix(process.env.API_PREFIX ?? 'api');
 
   app.enableVersioning({
