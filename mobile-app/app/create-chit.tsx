@@ -8,7 +8,13 @@ const decimal=(v:number)=>Number(v).toFixed(2);
 export default function CreateChit(){
  const{user}=useAuth();const[agents,setAgents]=useState<any[]>([]);const[name,setName]=useState('');const[description,setDescription]=useState('');const[type,setType]=useState('FIXED_DRAW');const[members,setMembers]=useState('5');const[months,setMonths]=useState('5');const[start,setStart]=useState(new Date().toISOString().slice(0,10));const[due,setDue]=useState('5');const[creatorParticipates,setCreatorParticipates]=useState(false);const[face,setFace]=useState('25000');const[agentMonths,setAgentMonths]=useState<number[]>([]);const[agentId,setAgentId]=useState('');const[fixedPayouts,setFixedPayouts]=useState<string[]>([]);const[busy,setBusy]=useState(false);
  const nMembers=Math.max(2,Number(members)||2);const nMonths=Math.max(2,Number(months)||2);const installment=Number(face)>0?Number(face)/nMembers:0;
- useEffect(()=>{if(isAdmin(user))usersApi.adminAgents().then(r=>setAgents(Array.isArray(r.data?.data)?r.data.data:[])).catch(()=>{});if(!isAdmin(user))setAgentId('')},[user]);
+
+ useEffect(()=>{
+  if(isAdmin(user))usersApi.adminAgents().then(r=>setAgents(Array.isArray(r.data?.data)?r.data.data:[])).catch(()=>{});
+  if(isAgent(user))setAgentId(String(user?.id||user?.userId||''));
+  else if(!isAdmin(user))setAgentId('');
+ },[user]);
+
  useEffect(()=>{setFixedPayouts(p=>Array.from({length:nMonths},(_,i)=>p[i]??String(face)));},[nMonths,face]);
  const agentOptions=useMemo(()=>agents.filter(a=>String(a.status).toUpperCase()==='ACTIVE').map(a=>({label:`${a.name||'Agent'} · ${a.mobile||a.email||''}`,value:String(a.id)})),[agents]);
  const toggle=(m:number)=>setAgentMonths(x=>x.includes(m)?x.filter(v=>v!==m):[...x,m].sort((a,b)=>a-b));
@@ -18,11 +24,13 @@ export default function CreateChit(){
   if(!Number.isFinite(installment)||installment<=0)return Alert.alert('Invalid total amount','Chit amount must be greater than zero.');
   if(!Number.isFinite(Number(face))||Number(face)<=0)return Alert.alert('Invalid total amount','Enter a valid chit amount.');
   if(isAdmin(user)&&agentMonths.length&&!agentId)return Alert.alert('Agent required','Select the active agent who will operate this chit.');
+  if(isAgent(user)&&agentMonths.length&&!agentId)return Alert.alert('Agent unavailable','Your logged-in agent identity could not be determined. Please sign in again.');
   if(schedule.some(x=>!Number.isFinite(x.payout)||x.payout<=0))return Alert.alert('Invalid payout','Every fixed-draw payout must be greater than zero.');
   setBusy(true);
   try{
    const payload:any={name:name.trim(),description:description.trim()||undefined,chitType:type,totalMembers:nMembers,totalMonths:nMonths,startDate:start,dueDay:Math.min(28,Math.max(1,Number(due)||1)),creatorParticipates,
-    firstMonthlyAmount:decimal(installment),monthlyAmounts:schedule.map(x=>decimal(x.amount)),totalChitAmount:decimal(Number(face)),agentMonthNumbers:agentMonths,agentId:isAdmin(user)?(agentId||undefined):undefined};
+    firstMonthlyAmount:decimal(installment),monthlyAmounts:schedule.map(x=>decimal(x.amount)),totalChitAmount:decimal(Number(face)),
+    agentMonthNumbers:agentMonths,agentId:agentMonths.length?(agentId||undefined):undefined};
    if(type==='FIXED_DRAW')payload.fixedDrawPayoutAmounts=schedule.map(x=>decimal(x.payout));
    const r=await chitsApi.create(payload);const data=r.data?.data??r.data;
    Alert.alert('Chit created','Draft created successfully. The agent assignment is saved by the API.',[{text:'Open setup',onPress:()=>router.replace({pathname:'/chit-setup',params:{chitId:String(data.id)}})}]);
