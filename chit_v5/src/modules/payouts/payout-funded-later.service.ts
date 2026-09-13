@@ -14,18 +14,33 @@ export class PayoutFundedLaterService {
     const [access]: any = await this.sequelize.query(
       `SELECT c.id
        FROM chits c
-       LEFT JOIN chit_agent_assignments ca
-         ON ca.chit_id=c.id AND ca.active=true
-       LEFT JOIN agents ag
-         ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:userId
        WHERE c.id=:chitId
          AND (
            c.creator_id=:userId
-           OR ca.can_manage_chit=true
-           OR ca.can_collect_cash=true
            OR EXISTS (
-             SELECT 1 FROM user_roles ur
+             SELECT 1
+             FROM user_roles ur
              WHERE ur.user_id=:userId AND ur.role='ADMIN'
+           )
+           OR EXISTS (
+             SELECT 1
+             FROM chit_agent_assignments ca
+             JOIN agents ag ON ag.id=ca.agent_id
+             WHERE ca.chit_id=c.id
+               AND ca.active=true
+               AND ca.can_manage_chit=true
+               AND ag.user_id=:userId
+               AND ag.status='ACTIVE'
+           )
+           OR EXISTS (
+             SELECT 1
+             FROM chit_agent_assignments ca
+             JOIN agents ag ON ag.id=ca.agent_id
+             WHERE ca.chit_id=c.id
+               AND ca.active=true
+               AND ca.can_collect_cash=true
+               AND ag.user_id=:userId
+               AND ag.status='ACTIVE'
            )
          )
        LIMIT 1`,
@@ -85,7 +100,6 @@ export class PayoutFundedLaterService {
   private normalizeComponents(dto: any, payoutAmount: number) {
     const supplied = Array.isArray(dto.components) ? dto.components : [];
 
-    // Backward-compatible legacy full settlement.
     if (!supplied.length) {
       if (!dto.paymentMethod || !dto.transactionReference?.trim()) {
         throw new BadRequestException(
@@ -96,7 +110,7 @@ export class PayoutFundedLaterService {
       return [
         {
           amount: payoutAmount,
-          paymentMethod: dto.paymentMethod,
+          paymentMethod: String(dto.paymentMethod).toUpperCase(),
           transactionReference: dto.transactionReference.trim(),
           notes: dto.notes ?? null,
         },
@@ -116,11 +130,17 @@ export class PayoutFundedLaterService {
 
     for (const c of components) {
       if (!Number.isFinite(c.amount) || c.amount <= 0) {
-        throw new BadRequestException('Each payout component amount must be greater than zero');
+        throw new BadRequestException(
+          'Each payout component amount must be greater than zero',
+        );
       }
+
       if (!['CASH', 'UPI', 'BANK_TRANSFER'].includes(c.paymentMethod)) {
-        throw new BadRequestException('Payout component method must be CASH, UPI or BANK_TRANSFER');
+        throw new BadRequestException(
+          'Payout component method must be CASH, UPI or BANK_TRANSFER',
+        );
       }
+
       if (!c.transactionReference) {
         throw new BadRequestException(
           `Transaction/reference is required for ${c.paymentMethod} payout component`,
@@ -128,11 +148,16 @@ export class PayoutFundedLaterService {
       }
     }
 
-    const total = components.reduce((sum: number, c: any) => sum + c.amount, 0);
+    const total = components.reduce(
+      (sum: number, c: any) => sum + c.amount,
+      0,
+    );
 
     if (Math.abs(total - payoutAmount) > 0.000001) {
       throw new ConflictException(
-        `Payout components must total exactly ₹${payoutAmount.toFixed(2)}. Supplied ₹${total.toFixed(2)}.`,
+        `Payout components must total exactly ₹${payoutAmount.toFixed(
+          2,
+        )}. Supplied ₹${total.toFixed(2)}.`,
       );
     }
 
@@ -143,34 +168,55 @@ export class PayoutFundedLaterService {
     return this.sequelize.transaction(async transaction => {
       const [rows]: any = await this.sequelize.query(
         `SELECT p.*,c.creator_id,c.accumulated_savings_amount,
-                c.total_members
+                c.total_members,m.status AS month_status
          FROM payouts p
          JOIN chits c ON c.id=p.chit_id
+         LEFT JOIN chit_months m ON m.id=p.chit_month_id
          WHERE p.id=:payoutId
-         FOR UPDATE OF p,c`,
+         FOR UPDATE OF p,c,m`,
         { replacements: { payoutId }, transaction },
       );
 
       if (!rows.length) throw new NotFoundException('Payout not found');
       const p = rows[0];
 
+      const monthStatus = String(p.month_status || '').toUpperCase();
+      if (['LOCKED', 'CLOSED', 'CANCELLED'].includes(monthStatus)) {
+        throw new ConflictException(
+          'This month is already closed/locked. Payout settlement cannot be changed.',
+        );
+      }
+
       const [actorAccess]: any = await this.sequelize.query(
         `SELECT 1
          FROM chits c
-         LEFT JOIN chit_agent_assignments ca
-           ON ca.chit_id=c.id AND ca.active=true
-         LEFT JOIN agents ag
-           ON ag.id=ca.agent_id
-          AND ag.status='ACTIVE'
-          AND ag.user_id=:actor
          WHERE c.id=:chitId
            AND (
              c.creator_id=:actor
-             OR ca.can_manage_chit=true
-             OR ca.can_collect_cash=true
              OR EXISTS (
-               SELECT 1 FROM user_roles ur
+               SELECT 1
+               FROM user_roles ur
                WHERE ur.user_id=:actor AND ur.role='ADMIN'
+             )
+             OR EXISTS (
+               SELECT 1
+               FROM chit_agent_assignments ca
+               JOIN agents ag ON ag.id=ca.agent_id
+               WHERE ca.chit_id=c.id
+                 AND ca.active=true
+                 AND ca.can_manage_chit=true
+                 AND ag.user_id=:actor
+                 AND ag.status='ACTIVE'
+             )
+             OR EXISTS (
+               SELECT 1
+               FROM chit_agent_assignments ca
+               JOIN agents ag ON ag.id=ca.agent_id
+               WHERE ca.chit_id=c.id
+                 AND ca.active=true
+                 AND ca.can_collect_cash=true
+                 AND ag.user_id=:actor
+                 AND ag.status='ACTIVE'
              )
            )
          LIMIT 1`,
@@ -191,8 +237,6 @@ export class PayoutFundedLaterService {
         throw new ConflictException('Payout already settled');
       }
 
-      // FAILED is intentionally kept backward compatible. No funds or
-      // ledger entries are consumed when a payout is marked failed.
       if (dto.status === 'FAILED') {
         const [updated]: any = await this.sequelize.query(
           `UPDATE payouts
@@ -224,18 +268,12 @@ export class PayoutFundedLaterService {
 
       const components = this.normalizeComponents(dto, payoutAmount);
 
-      /*
-       * A payout may be CREATED before members have paid.
-       * It must NOT be SETTLED until the creator/operator has enough
-       * verified funds. Cash/UPI is only the destination of the payout;
-       * verified member collections remain the source of funds.
-       */
       const [collectionRows]: any = await this.sequelize.query(
         `SELECT COALESCE(SUM(amount),0)::numeric AS collected
          FROM payments
          WHERE chit_id=:chitId
            AND chit_month_id=:monthId
-           AND status IN ('VERIFIED','PAID','SETTLED','COMPLETED')`,
+           AND status='VERIFIED'`,
         {
           replacements: {
             chitId: p.chit_id,
@@ -278,7 +316,9 @@ export class PayoutFundedLaterService {
         },
       );
 
-      const otherSettledPayouts = Number(otherSettledRows[0]?.amount || 0);
+      const otherSettledPayouts = Number(
+        otherSettledRows[0]?.amount || 0,
+      );
 
       const available =
         openingSavings +
@@ -286,13 +326,13 @@ export class PayoutFundedLaterService {
         (additionalAuction ? auctionDiscount : 0) -
         otherSettledPayouts;
 
-      if (available < payoutAmount) {
+      if (available + 0.000001 < payoutAmount) {
         throw new ConflictException(
           `Insufficient verified funds to settle payout. Required ₹${payoutAmount.toFixed(
             2,
           )}, available ₹${available.toFixed(
             2,
-          )} including previous savings. Verified collections so far: ₹${collected.toFixed(2)}.`,
+          )}. Verified collections: ₹${collected.toFixed(2)}.`,
         );
       }
 
@@ -355,7 +395,10 @@ export class PayoutFundedLaterService {
         components.length === 1
           ? components[0].transactionReference
           : components
-              .map((c: any) => `${c.paymentMethod}:${c.transactionReference}`)
+              .map(
+                (c: any) =>
+                  `${c.paymentMethod}:${c.transactionReference}`,
+              )
               .join(' | ');
 
       const [updated]: any = await this.sequelize.query(
@@ -379,8 +422,6 @@ export class PayoutFundedLaterService {
         },
       );
 
-      // Persist the actual money movements separately. The parent payout
-      // remains the obligation; these rows are its cash/UPI components.
       for (const component of components) {
         await this.sequelize.query(
           `INSERT INTO payout_transactions
@@ -412,34 +453,32 @@ export class PayoutFundedLaterService {
         { replacements: { payoutId }, transaction },
       );
 
-      if (already.length) {
-        throw new ConflictException('Payout ledger entry already exists');
+      if (!already.length) {
+        await this.sequelize.query(
+          `INSERT INTO ledger_entries
+           (id,chit_id,chit_month_id,chit_participant_id,entry_type,amount,
+            description,reference_type,reference_id,created_by,
+            created_at,updated_at)
+           SELECT gen_random_uuid(),
+                  p.chit_id,
+                  p.chit_month_id,
+                  cp.id,
+                  'PAYOUT',
+                  -p.amount,
+                  'Payout settled',
+                  'PAYOUT',
+                  p.id,
+                  :actor,
+                  NOW(),
+                  NOW()
+           FROM payouts p
+           JOIN chit_participants cp
+             ON cp.user_id=p.recipient_user_id
+            AND cp.chit_id=p.chit_id
+           WHERE p.id=:payoutId`,
+          { replacements: { payoutId, actor }, transaction },
+        );
       }
-
-      await this.sequelize.query(
-        `INSERT INTO ledger_entries
-         (id,chit_id,chit_month_id,chit_participant_id,entry_type,amount,
-          description,reference_type,reference_id,created_by,
-          created_at,updated_at)
-         SELECT gen_random_uuid(),
-                p.chit_id,
-                p.chit_month_id,
-                cp.id,
-                'PAYOUT',
-                -p.amount,
-                'Payout settled',
-                'PAYOUT',
-                p.id,
-                :actor,
-                NOW(),
-                NOW()
-         FROM payouts p
-         JOIN chit_participants cp
-           ON cp.user_id=p.recipient_user_id
-          AND cp.chit_id=p.chit_id
-         WHERE p.id=:payoutId`,
-        { replacements: { payoutId, actor }, transaction },
-      );
 
       return {
         ...updated[0],
