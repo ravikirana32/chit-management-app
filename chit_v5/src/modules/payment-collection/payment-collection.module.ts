@@ -19,14 +19,17 @@ export class PaymentCollectionController{
  async memberPay(@Param('obligationId')id:string,@Body()d:CollectionDto,@CurrentUser()u:any){
   return this.db.transaction(async transaction=>{
    const [o]:any=await this.db.query(
-    `SELECT o.*,m.chit_id,cp.user_id
+    `SELECT o.*,m.chit_id,m.status AS month_status,cp.user_id
      FROM contribution_obligations o
      JOIN chit_months m ON m.id=o.chit_month_id
      JOIN chit_participants cp ON cp.id=o.chit_participant_id
      WHERE o.id=:id AND cp.user_id=:u FOR UPDATE OF o`,
     {replacements:{id,u:u.sub},transaction});
    if(!o.length)throw new NotFoundException('Obligation not found');
-   const row=o[0]; const amount=Number(d.amount);
+   const row=o[0];
+   if(['COMPLETED','LOCKED','CLOSED','CANCELLED'].includes(String(row.month_status||'').toUpperCase()))
+    throw new ConflictException('This month is completed or locked. New payments cannot be submitted.');
+   const amount=Number(d.amount);
    if(!Number.isFinite(amount)||amount<=0||amount>Number(row.outstanding_amount))
     throw new ConflictException('Invalid payment amount');
    const [p]:any=await this.db.query(
@@ -44,7 +47,7 @@ export class PaymentCollectionController{
   if(d.method!=='CASH')throw new ConflictException('Use CASH for this endpoint');
   return this.db.transaction(async transaction=>{
    const [o]:any=await this.db.query(
-    `SELECT o.*,m.chit_id,cp.chit_id AS participant_chit_id,c.creator_id
+    `SELECT o.*,m.chit_id,m.status AS month_status,cp.chit_id AS participant_chit_id,c.creator_id
      FROM contribution_obligations o
      JOIN chit_months m ON m.id=o.chit_month_id
      JOIN chit_participants cp ON cp.id=o.chit_participant_id
@@ -53,6 +56,8 @@ export class PaymentCollectionController{
     {replacements:{id},transaction});
    if(!o.length)throw new NotFoundException('Obligation not found');
    const row=o[0];
+   if(['COMPLETED','LOCKED','CLOSED','CANCELLED'].includes(String(row.month_status||'').toUpperCase()))
+    throw new ConflictException('This month is completed or locked. Cash collection is no longer allowed.');
    const [agentAccess]:any=await this.db.query(
     `SELECT 1 FROM chit_agent_assignments ca JOIN agents ag ON ag.id=ca.agent_id
      WHERE ca.chit_id=:chit AND ag.user_id=:u AND ag.status='ACTIVE' AND ca.active=true
