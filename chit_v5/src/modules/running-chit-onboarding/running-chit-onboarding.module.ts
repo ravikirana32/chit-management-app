@@ -740,7 +740,7 @@ export class RunningChitOnboardingController {
           );
         }
 
-        await this.db.query(
+        const [paymentRows]: any = await this.db.query(
           `INSERT INTO payments
            (id,chit_id,chit_month_id,chit_participant_id,obligation_id,amount,
             payment_method,status,transaction_reference,payment_date,submitted_at,
@@ -749,7 +749,8 @@ export class RunningChitOnboardingController {
             gen_random_uuid(),:chit,:month,:participant,:obligation,:amount,
             :method,'VERIFIED',:reference,:paymentDate,:paymentDate,:paymentDate,
             :actor,:actor,:notes,:receipt,NOW(),NOW()
-           )`,
+           )
+           RETURNING id`,
           {
             replacements: {
               chit: chitId,
@@ -763,6 +764,32 @@ export class RunningChitOnboardingController {
               actor: u.sub,
               notes: row.notes || 'Historical running-chit entry',
               receipt: row.reference || null,
+            },
+            transaction,
+          },
+        );
+
+        // Historical payments are real, already-verified contributions. Persist a
+        // matching ledger entry so historical months reconcile exactly like live
+        // months. The PAYMENT reference makes this idempotent with the ledger
+        // service's read-time payment fallback and prevents double counting.
+        const paymentId = paymentRows[0].id;
+        await this.db.query(
+          `INSERT INTO ledger_entries
+           (id,chit_id,chit_month_id,chit_participant_id,entry_type,amount,
+            description,reference_type,reference_id,created_by,created_at,updated_at)
+           VALUES(
+            gen_random_uuid(),:chit,:month,:participant,'CONTRIBUTION',:amount,
+            'Historical running-chit contribution','PAYMENT',:payment,:actor,NOW(),NOW()
+           )`,
+          {
+            replacements: {
+              chit: chitId,
+              month: month.id,
+              participant: participant.id,
+              amount: contribution,
+              payment: paymentId,
+              actor: u.sub,
             },
             transaction,
           },
