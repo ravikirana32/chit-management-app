@@ -1,6 +1,9 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Sequelize } from 'sequelize-typescript';
 
+const CLOSED_MONTH_STATUSES = new Set(['COMPLETED', 'LOCKED', 'CLOSED', 'CANCELLED']);
+const MEMBER_PAYMENT_METHODS = new Set(['CASH', 'UPI']);
+
 @Injectable()
 export class PaymentWorkflowService {
   constructor(private readonly sequelize: Sequelize) {}
@@ -26,8 +29,15 @@ export class PaymentWorkflowService {
       );
 
       const isCreator = month.creator_id === userId;
-      const [agentAccess]: any = await this.sequelize.query(`SELECT 1 FROM chit_agent_assignments ca JOIN agents ag ON ag.id=ca.agent_id WHERE ca.chit_id=:chitId AND ag.user_id=:userId AND ag.status='ACTIVE' AND ca.active=true AND (ca.can_collect_cash=true OR ca.can_verify_payments=true) LIMIT 1`,{replacements:{chitId,userId},transaction});
-      const isAgentOperator=!!agentAccess.length;
+      const [agentAccess]: any = await this.sequelize.query(
+        `SELECT 1 FROM chit_agent_assignments ca
+         JOIN agents ag ON ag.id=ca.agent_id
+         WHERE ca.chit_id=:chitId AND ag.user_id=:userId
+           AND ag.status='ACTIVE' AND ca.active=true
+           AND (ca.can_collect_cash=true OR ca.can_verify_payments=true) LIMIT 1`,
+        { replacements: { chitId, userId }, transaction },
+      );
+      const isAgentOperator = !!agentAccess.length;
       if (!isCreator && !memberRows.length && !isAgentOperator) {
         throw new ConflictException('You do not have access to this chit');
       }
@@ -102,23 +112,23 @@ export class PaymentWorkflowService {
             userId: o.user_id,
           })),
           count: visible.length,
-          nextStep:
-            'Use obligations[].id as obligationId when submitting a contribution payment.',
+          nextStep: 'Use obligations[].id as obligationId when submitting a contribution payment.',
         },
       };
     });
   }
 
-  /**
-   * NEW:
-   * Lists all payments belonging to a chit/month.
-   * Creator sees all member payments; a member sees only their own.
-   */
   async listPayments(chitId: string, monthId: string, userId: string) {
     const [access]: any = await this.sequelize.query(
       `SELECT c.creator_id,
               cp.id AS requester_participant_id,
-              EXISTS(SELECT 1 FROM chit_agent_assignments ca JOIN agents ag ON ag.id=ca.agent_id WHERE ca.chit_id=c.id AND ag.user_id=:userId AND ag.status='ACTIVE' AND ca.active=true AND (ca.can_collect_cash=true OR ca.can_verify_payments=true)) AS agent_operator
+              EXISTS(
+                SELECT 1 FROM chit_agent_assignments ca
+                JOIN agents ag ON ag.id=ca.agent_id
+                WHERE ca.chit_id=c.id AND ag.user_id=:userId
+                  AND ag.status='ACTIVE' AND ca.active=true
+                  AND (ca.can_collect_cash=true OR ca.can_verify_payments=true)
+              ) AS agent_operator
        FROM chits c
        LEFT JOIN chit_participants cp
          ON cp.chit_id=c.id AND cp.user_id=:userId
@@ -136,40 +146,22 @@ export class PaymentWorkflowService {
 
     const [rows]: any = await this.sequelize.query(
       `SELECT
-         p.id,
-         p.chit_id,
-         p.chit_month_id,
-         p.chit_participant_id,
-         p.obligation_id,
-         p.amount,
-         p.payment_method,
-         p.status,
-         p.transaction_reference,
-         p.payment_date,
-         p.submitted_at,
-         p.verified_at,
-         p.receipt_number,
-         p.notes,
-         p.created_at,
-         cp.participant_sequence,
-         cp.user_id,
-         o.due_amount,
-         o.paid_amount AS obligation_paid_amount,
-         o.outstanding_amount,
+         p.id,p.chit_id,p.chit_month_id,p.chit_participant_id,p.obligation_id,
+         p.amount,p.payment_method,p.status,p.transaction_reference,
+         p.payment_date,p.submitted_at,p.verified_at,p.receipt_number,p.notes,
+         p.created_at,cp.participant_sequence,cp.user_id,o.due_amount,
+         o.paid_amount AS obligation_paid_amount,o.outstanding_amount,
          o.status AS obligation_status
        FROM payments p
        JOIN chit_participants cp ON cp.id=p.chit_participant_id
        JOIN contribution_obligations o ON o.id=p.obligation_id
-       WHERE p.chit_id=:chitId
-         AND p.chit_month_id=:monthId
-         AND (:isCreator = true OR :isAgentOperator = true OR p.chit_participant_id=:requesterParticipantId)
+       WHERE p.chit_id=:chitId AND p.chit_month_id=:monthId
+         AND (:isCreator=true OR :isAgentOperator=true
+              OR p.chit_participant_id=:requesterParticipantId)
        ORDER BY cp.participant_sequence,p.created_at`,
       {
         replacements: {
-          chitId,
-          monthId,
-          isCreator,
-          isAgentOperator,
+          chitId, monthId, isCreator, isAgentOperator,
           requesterParticipantId: access[0].requester_participant_id,
         },
       },
@@ -209,68 +201,64 @@ export class PaymentWorkflowService {
   async submit(chitId: string, participantId: string, userId: string, dto: any) {
     return this.sequelize.transaction(async transaction => {
       const [r]: any = await this.sequelize.query(
-        `SELECT o.*,m.chit_id,cp.user_id,cp.status AS participant_status
+        `SELECT o.*,m.chit_id,m.status AS month_status,
+                cp.user_id,cp.status AS participant_status
          FROM contribution_obligations o
          JOIN chit_months m ON m.id=o.chit_month_id
          JOIN chit_participants cp ON cp.id=o.chit_participant_id
          JOIN chits c ON c.id=m.chit_id
-         WHERE o.id=:oid AND m.chit_id=:chitId
-           AND cp.id=:participantId
-         FOR UPDATE`,
+         WHERE o.id=:oid AND m.chit_id=:chitId AND cp.id=:participantId
+         FOR UPDATE OF o,m`,
         {
-          replacements: {
-            oid: dto.obligationId,
-            chitId,
-            participantId,
-          },
+          replacements: { oid: dto.obligationId, chitId, participantId },
           transaction,
         },
       );
 
-      if (!r.length) {
-        throw new NotFoundException('Contribution obligation not found');
-      }
+      if (!r.length) throw new NotFoundException('Contribution obligation not found');
 
       const o = r[0];
 
       if (o.user_id !== userId || o.chit_participant_id !== participantId) {
+        throw new ConflictException('Payment does not belong to authenticated participant');
+      }
+
+      const monthStatus = String(o.month_status || '').toUpperCase();
+      if (CLOSED_MONTH_STATUSES.has(monthStatus)) {
         throw new ConflictException(
-          'Payment does not belong to authenticated participant',
+          'This month is completed or locked. New member payments cannot be submitted.',
         );
       }
 
-      if (
-        ['VERIFIED', 'PAID'].includes(o.status) ||
-        Number(o.outstanding_amount) <= 0
-      ) {
-        throw new ConflictException(
-          'Contribution obligation is already fully paid',
+      const method = String(dto.paymentMethod || '').toUpperCase();
+      if (!MEMBER_PAYMENT_METHODS.has(method)) {
+        throw new BadRequestException('Member payment method must be CASH or UPI');
+      }
+
+      if (!String(dto.transactionReference || '').trim()) {
+        throw new BadRequestException(
+          method === 'CASH'
+            ? 'Cash receipt/reference is required'
+            : 'UPI transaction reference is required',
         );
+      }
+
+      if (['VERIFIED', 'PAID'].includes(o.status) || Number(o.outstanding_amount) <= 0) {
+        throw new ConflictException('Contribution obligation is already fully paid');
       }
 
       const amount = Number(dto.amount);
-      if (
-        !Number.isFinite(amount) ||
-        amount <= 0 ||
-        amount > Number(o.outstanding_amount)
-      ) {
+      if (!Number.isFinite(amount) || amount <= 0 || amount > Number(o.outstanding_amount)) {
         throw new BadRequestException('Invalid payment amount');
       }
 
-      // NEW: database-backed idempotency lookup.
       if (dto.idempotencyKey) {
         const [existing]: any = await this.sequelize.query(
-          `SELECT *
-           FROM payments
-           WHERE chit_id=:chitId
-             AND idempotency_key=:idempotencyKey
-           LIMIT 1
-           FOR UPDATE`,
+          `SELECT * FROM payments
+           WHERE chit_id=:chitId AND idempotency_key=:idempotencyKey
+           LIMIT 1 FOR UPDATE`,
           {
-            replacements: {
-              chitId,
-              idempotencyKey: dto.idempotencyKey,
-            },
+            replacements: { chitId, idempotencyKey: dto.idempotencyKey },
             transaction,
           },
         );
@@ -301,8 +289,8 @@ export class PaymentWorkflowService {
             pid: participantId,
             oid: dto.obligationId,
             amount,
-            method: dto.paymentMethod,
-            ref: dto.transactionReference,
+            method,
+            ref: String(dto.transactionReference).trim(),
             date: dto.paymentDate,
             user: userId,
             notes: dto.notes ?? null,
@@ -333,29 +321,26 @@ export class PaymentWorkflowService {
       );
 
       if (!r.length) throw new NotFoundException('Payment not found');
-
       const p = r[0];
 
       const [verifyAccess]: any = await this.sequelize.query(
         `SELECT 1 FROM chits c
          LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
-         LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:verifier
+         LEFT JOIN agents ag ON ag.id=ca.agent_id
+           AND ag.status='ACTIVE' AND ag.user_id=:verifier
          WHERE c.id=:chitId
-           AND (c.creator_id=:verifier OR (ag.id IS NOT NULL AND ca.can_verify_payments=true))
+           AND (c.creator_id=:verifier
+                OR (ag.id IS NOT NULL AND ca.can_verify_payments=true))
          LIMIT 1`,
         { replacements: { chitId:p.chit_id, verifier }, transaction },
       );
-      if (!verifyAccess.length)
+      if (!verifyAccess.length) {
         throw new ConflictException('Payment verification permission is required for this chit');
-
-      if (p.status === 'VERIFIED') {
-        throw new ConflictException('Payment already verified');
       }
 
+      if (p.status === 'VERIFIED') throw new ConflictException('Payment already verified');
       if (p.status !== 'SUBMITTED') {
-        throw new ConflictException(
-          'Only submitted payments can be verified',
-        );
+        throw new ConflictException('Only submitted payments can be verified');
       }
 
       if (dto.status === 'REJECTED') {
@@ -364,29 +349,18 @@ export class PaymentWorkflowService {
            SET status='REJECTED',verified_at=NOW(),verified_by=:v,
                notes=COALESCE(:n,notes),updated_at=NOW()
            WHERE id=:id RETURNING *`,
-          {
-            replacements: {
-              id: paymentId,
-              v: verifier,
-              n: dto.notes ?? null,
-            },
-            transaction,
-          },
+          { replacements: { id: paymentId, v: verifier, n: dto.notes ?? null }, transaction },
         );
         return { payment: u[0] };
       }
 
       if (dto.status !== 'VERIFIED') {
-        throw new BadRequestException(
-          'Status must be VERIFIED or REJECTED',
-        );
+        throw new BadRequestException('Status must be VERIFIED or REJECTED');
       }
 
       const paid = Number(p.paid_amount) + Number(p.amount);
       if (paid > Number(p.due_amount)) {
-        throw new ConflictException(
-          'Verified payment would exceed obligation amount',
-        );
+        throw new ConflictException('Verified payment would exceed obligation amount');
       }
 
       const out = Math.max(0, Number(p.due_amount) - paid);
@@ -394,18 +368,9 @@ export class PaymentWorkflowService {
 
       await this.sequelize.query(
         `UPDATE contribution_obligations
-         SET paid_amount=:paid,outstanding_amount=:out,status=:status,
-             updated_at=NOW()
+         SET paid_amount=:paid,outstanding_amount=:out,status=:status,updated_at=NOW()
          WHERE id=:oid`,
-        {
-          replacements: {
-            paid,
-            out,
-            status: obligationStatus,
-            oid: p.obligation_id,
-          },
-          transaction,
-        },
+        { replacements: { paid, out, status: obligationStatus, oid: p.obligation_id }, transaction },
       );
 
       const [u]: any = await this.sequelize.query(
@@ -415,10 +380,8 @@ export class PaymentWorkflowService {
          WHERE id=:id RETURNING *`,
         {
           replacements: {
-            id: paymentId,
-            v: verifier,
-            r: dto.receiptNumber ?? null,
-            n: dto.notes ?? null,
+            id: paymentId, v: verifier,
+            r: dto.receiptNumber ?? null, n: dto.notes ?? null,
           },
           transaction,
         },
@@ -426,42 +389,28 @@ export class PaymentWorkflowService {
 
       return {
         payment: u[0],
-        obligation: {
-          paidAmount: paid,
-          outstandingAmount: out,
-          status: obligationStatus,
-        },
+        obligation: { paidAmount: paid, outstandingAmount: out, status: obligationStatus },
       };
     });
   }
 
-  /**
-   * NEW:
-   * Atomically verifies every SUBMITTED payment for a chit/month.
-   * If one payment is invalid, the transaction rolls back all changes.
-   */
-  async verifyAll(
-    chitId: string,
-    monthId: string,
-    verifier: string,
-    dto: any,
-  ) {
+  async verifyAll(chitId: string, monthId: string, verifier: string, dto: any) {
     return this.sequelize.transaction(async transaction => {
       const [access]: any = await this.sequelize.query(
         `SELECT c.id
          FROM chits c
          LEFT JOIN chit_agent_assignments ca ON ca.chit_id=c.id AND ca.active=true
-         LEFT JOIN agents ag ON ag.id=ca.agent_id AND ag.status='ACTIVE' AND ag.user_id=:verifier
+         LEFT JOIN agents ag ON ag.id=ca.agent_id
+           AND ag.status='ACTIVE' AND ag.user_id=:verifier
          WHERE c.id=:chitId
-           AND (c.creator_id=:verifier OR (ag.id IS NOT NULL AND ca.can_verify_payments=true))
+           AND (c.creator_id=:verifier
+                OR (ag.id IS NOT NULL AND ca.can_verify_payments=true))
          FOR UPDATE OF c`,
         { replacements: { chitId, verifier }, transaction },
       );
 
       if (!access.length) {
-        throw new ConflictException(
-          'Payment verification permission is required for this chit',
-        );
+        throw new ConflictException('Payment verification permission is required for this chit');
       }
 
       const [rows]: any = await this.sequelize.query(
@@ -469,8 +418,7 @@ export class PaymentWorkflowService {
                 o.id AS obligation_id,o.outstanding_amount
          FROM payments p
          JOIN contribution_obligations o ON o.id=p.obligation_id
-         WHERE p.chit_id=:chitId
-           AND p.chit_month_id=:monthId
+         WHERE p.chit_id=:chitId AND p.chit_month_id=:monthId
            AND p.status='SUBMITTED'
          ORDER BY p.created_at
          FOR UPDATE OF p,o`,
@@ -479,11 +427,7 @@ export class PaymentWorkflowService {
 
       if (!rows.length) {
         return {
-          success: true,
-          chitId,
-          monthId,
-          verifiedCount: 0,
-          paymentIds: [],
+          success: true, chitId, monthId, verifiedCount: 0, paymentIds: [],
           message: 'No submitted payments to verify',
         };
       }
@@ -493,9 +437,7 @@ export class PaymentWorkflowService {
       for (const p of rows) {
         const paid = Number(p.paid_amount) + Number(p.amount);
         if (paid > Number(p.due_amount)) {
-          throw new ConflictException(
-            `Payment ${p.id} would exceed the obligation amount`,
-          );
+          throw new ConflictException(`Payment ${p.id} would exceed the obligation amount`);
         }
 
         const out = Math.max(0, Number(p.due_amount) - paid);
@@ -503,30 +445,19 @@ export class PaymentWorkflowService {
 
         await this.sequelize.query(
           `UPDATE contribution_obligations
-           SET paid_amount=:paid,outstanding_amount=:out,status=:status,
-               updated_at=NOW()
+           SET paid_amount=:paid,outstanding_amount=:out,status=:status,updated_at=NOW()
            WHERE id=:oid`,
-          {
-            replacements: {
-              paid,
-              out,
-              status,
-              oid: p.obligation_id,
-            },
-            transaction,
-          },
+          { replacements: { paid, out, status, oid: p.obligation_id }, transaction },
         );
 
         await this.sequelize.query(
           `UPDATE payments
            SET status='VERIFIED',verified_at=NOW(),verified_by=:verifier,
-               receipt_number=:receipt,notes=COALESCE(:notes,notes),
-               updated_at=NOW()
+               receipt_number=:receipt,notes=COALESCE(:notes,notes),updated_at=NOW()
            WHERE id=:id`,
           {
             replacements: {
-              id: p.id,
-              verifier,
+              id: p.id, verifier,
               receipt: dto.receiptNumber ?? null,
               notes: dto.notes ?? null,
             },
@@ -538,12 +469,8 @@ export class PaymentWorkflowService {
       }
 
       return {
-        success: true,
-        chitId,
-        monthId,
-        verifiedCount: verified.length,
-        paymentIds: verified,
-        status: 'VERIFIED',
+        success: true, chitId, monthId, verifiedCount: verified.length,
+        paymentIds: verified, status: 'VERIFIED',
       };
     });
   }
