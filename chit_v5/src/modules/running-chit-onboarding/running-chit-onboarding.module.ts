@@ -55,7 +55,7 @@ class CreateRunningChitDto {
  @ApiPropertyOptional({type:[Number]}) @IsOptional() @IsArray() @IsInt({each:true}) @Min(1,{each:true}) agentMonthNumbers?:number[];
  @ApiProperty({type:[RunningMemberDto]}) @IsArray() @ValidateNested({each:true}) @Type(()=>RunningMemberDto) members!:RunningMemberDto[];
  @ApiPropertyOptional({type:[String]}) @IsOptional() @IsArray() @IsDecimal({}, {each:true}) monthlyAmounts?:string[];
- @ApiPropertyOptional({type:[String]}) @IsOptional() @IsArray() @IsString({each:true}) payoutAmounts?:string[];
+ @ApiPropertyOptional({type:[String]}) @IsOptional() @IsArray() @IsDecimal({}, {each:true}) payoutAmounts?:string[];
 }
 
 @ApiTags('Running Chit Onboarding') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
@@ -69,7 +69,7 @@ export class RunningChitOnboardingController {
  }
  private async canManage(chitId:string,userId:string,tx?:any){const [r]:any=await this.db.query(`SELECT 1 FROM chits c WHERE c.id=:chitId AND (c.creator_id=:userId OR EXISTS(SELECT 1 FROM user_roles ur WHERE ur.user_id=:userId AND ur.role='ADMIN')) LIMIT 1`,{replacements:{chitId,userId},transaction:tx});return !!r.length;}
  private monthType(chitType:string,month:any){const t=String(month.month_type||'').toUpperCase();if(t==='AGENT_CHIT')return'AGENT_CHIT';return String(chitType).toUpperCase()==='AUCTION'?'AUCTION':'FIXED_DRAW';}
- private face(chit:any){const x=Number(chit.total_chit_amount);if(!Number.isFinite(x)||x<=0)throw new BadRequestException('Chit total amount is invalid');return x;}
+ private face(chit:any){const raw=chit?.total_chit_amount??chit?.totalChitAmount;const x=Number(raw);if(!Number.isFinite(x)||x<=0)throw new BadRequestException('Chit total amount is invalid');return x;}
 
  @Post() @ApiOperation({summary:'Create a running/traditional chit and generate its full schedule'})
  async create(@Body()dto:CreateRunningChitDto,@CurrentUser()u:any){
@@ -82,7 +82,6 @@ export class RunningChitOnboardingController {
    if(amounts.length!==dto.totalMonths||amounts.some(x=>!Number.isFinite(x)||x<=0))throw new BadRequestException('monthlyAmounts must contain one positive amount for every month');
    const agentMonths=[...(dto.agentMonthNumbers||[])].map(Number).sort((a,b)=>a-b);
    if(new Set(agentMonths).size!==agentMonths.length||agentMonths.some(x=>x<1||x>dto.totalMonths))throw new BadRequestException('Invalid agent month numbers');
-   if(agentMonths.length>1)throw new BadRequestException('Only one AGENT_CHIT month can be configured per running chit');
    if(agentMonths.length&&!dto.agentId&&!await this.hasCurrentAgent(u.sub,transaction))throw new BadRequestException('A responsible agent is required when AGENT_CHIT months are configured');
    let agentId:string|null=null;
    if(dto.agentId){const [r]:any=await this.db.query(`SELECT id FROM agents WHERE (id=:id OR user_id=:id) AND status='ACTIVE' LIMIT 1`,{replacements:{id:dto.agentId},transaction});if(!r.length)throw new NotFoundException('Active responsible agent not found');agentId=r[0].id;}
