@@ -13,11 +13,10 @@ import { VerifiedContributionGateService } from '../../common/verified-contribut
 @Injectable()
 export class VerifiedAuctionService extends AuctionService {
   constructor(
-    db: Sequelize,
+    private readonly db: Sequelize,
     gateway: AuctionGateway,
     winnerReveal: WinnerRevealService,
     schedulePolicy: OperationSchedulePolicyService,
-    private readonly db: Sequelize,
     private readonly contributionGate: VerifiedContributionGateService,
   ) {
     super(db, gateway, winnerReveal, schedulePolicy);
