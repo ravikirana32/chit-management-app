@@ -55,7 +55,7 @@ class CreateRunningChitDto {
  @ApiPropertyOptional({type:[Number]}) @IsOptional() @IsArray() @IsInt({each:true}) @Min(1,{each:true}) agentMonthNumbers?:number[];
  @ApiProperty({type:[RunningMemberDto]}) @IsArray() @ValidateNested({each:true}) @Type(()=>RunningMemberDto) members!:RunningMemberDto[];
  @ApiPropertyOptional({type:[String]}) @IsOptional() @IsArray() @IsDecimal({}, {each:true}) monthlyAmounts?:string[];
- @ApiPropertyOptional({type:[String]}) @IsOptional() @IsArray() @IsDecimal({}, {each:true}) payoutAmounts?:string[];
+ @ApiPropertyOptional({type:[String]}) @IsOptional() @IsArray() @IsString({each:true}) payoutAmounts?:string[];
 }
 
 @ApiTags('Running Chit Onboarding') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
