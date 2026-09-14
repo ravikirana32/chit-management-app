@@ -16,7 +16,8 @@ export default function ExistingChit(){
  const[created,setCreated]=useState<any>(null);const[monthIndex,setMonthIndex]=useState(1);
  const[agents,setAgents]=useState<any[]>([]);
  const[name,setName]=useState('');const[description,setDescription]=useState('');const[type,setType]=useState<'FIXED_DRAW'|'AUCTION'>('FIXED_DRAW');
- const[members,setMembers]=useState(4);const[totalMonths,setTotalMonths]=useState(6);const[historicalCount,setHistoricalCount]=useState(2);
+ const[membersText,setMembersText]=useState('4');const[totalMonthsText,setTotalMonthsText]=useState('6');const[historicalCountText,setHistoricalCountText]=useState('2');
+ const members=Math.max(0,Math.floor(n(membersText,0)));const totalMonths=Math.max(0,Math.floor(n(totalMonthsText,0)));const historicalCount=Math.max(0,Math.floor(n(historicalCountText,0)));
  const[totalAmount,setTotalAmount]=useState('20000');const[startDate,setStartDate]=useState(new Date().toISOString().slice(0,10));const[dueDay,setDueDay]=useState('5');
  const[agentId,setAgentId]=useState('');const[creatorParticipates,setCreatorParticipates]=useState(false);
  const[memberInputs,setMemberInputs]=useState<string[]>(['','','','']);
@@ -42,8 +43,12 @@ export default function ExistingChit(){
  const agentOptions=agents.filter(a=>String(a.status||'ACTIVE').toUpperCase()==='ACTIVE').map(a=>({label:`${a.name||'Agent'} · ${a.mobile||a.userId||a.id}`,value:String(a.id)}));
  const selectedAgent=agents.find(a=>String(a.id)===String(agentId));
  const toggleAgentMonth=(m:number)=>{
-  setAgentMonths(prev=>prev.includes(m)?prev.filter(x=>x!==m):[...prev,m].sort((a,b)=>a-b));
-  setAgentPayouts(prev=>prev[m]?prev:{...prev,[m]:face>0?face.toFixed(2):''});
+  setAgentMonths(prev=>{
+   if(prev.includes(m)){setAgentPayouts({});return [];}
+   const previous=prev[0];
+   setAgentPayouts(current=>({[m]:previous&&current[previous]?current[previous]:(face>0?face.toFixed(2):'')}));
+   return [m];
+  });
  };
  const payoutForMonth=(m:number)=>n(agentPayouts[m],face);
 
@@ -57,6 +62,7 @@ export default function ExistingChit(){
   if(memberRows.length!==members)return Alert.alert(`Enter all ${members} existing member UUID/mobile values`);
   if(new Set(memberRows).size!==memberRows.length)return Alert.alert('Duplicate members are not allowed');
   if(agentMonths.length&&!agentId&&!isAgentUser)return Alert.alert('Select the responsible agent before marking AGENT_CHIT months');
+  if(agentMonths.length>1)return Alert.alert('Only one AGENT_CHIT month can be configured per chit');
   const payoutAmounts=Array.from({length:totalMonths},(_,i)=>agentMonths.includes(i+1)?payoutForMonth(i+1):undefined);
   if(agentMonths.some(m=>payoutForMonth(m)<=0))return Alert.alert('Every AGENT_CHIT month needs a positive agent payout');
   setBusy(true);
@@ -96,14 +102,14 @@ export default function ExistingChit(){
    <Card><Text style={s.section}>1 · Running chit basics</Text><Text style={s.muted}>Only historical outcome data is entered later. Collections, savings and payout accounting are calculated by the backend.</Text>
     <Input label="Chit name" value={name} onChangeText={setName}/><Input label="Description" value={description} onChangeText={setDescription} multiline/>
     <View style={s.row}><Button title="FIXED DRAW" secondary={type!=='FIXED_DRAW'} onPress={()=>setType('FIXED_DRAW')}/><Button title="AUCTION" secondary={type!=='AUCTION'} onPress={()=>setType('AUCTION')}/></View>
-    <View style={s.row}><View style={{flex:1}}><Input label="Members" value={String(members)} onChangeText={v=>setMembers(Math.max(2,Math.floor(n(v,2))))} keyboardType="numeric"/></View><View style={{flex:1}}><Input label="Total months" value={String(totalMonths)} onChangeText={v=>setTotalMonths(Math.max(2,Math.floor(n(v,2))))} keyboardType="numeric"/></View></View>
-    <Input label="Completed months outside the app" value={String(historicalCount)} onChangeText={v=>setHistoricalCount(Math.max(1,Math.min(totalMonths-1,Math.floor(n(v,1)))))} keyboardType="numeric"/>
-    <Text style={s.muted}>{`Example: ${historicalCount} completed months means Month ${historicalCount+1} becomes the LIVE takeover month.`}</Text>
+    <View style={s.row}><View style={{flex:1}}><Input label="Members" value={membersText} onChangeText={setMembersText} keyboardType="numeric"/></View><View style={{flex:1}}><Input label="Total months" value={totalMonthsText} onChangeText={setTotalMonthsText} keyboardType="numeric"/></View></View>
+    <Input label="Completed months outside the app" value={historicalCountText} onChangeText={setHistoricalCountText} keyboardType="numeric"/>
+    <Text style={s.muted}>{historicalCount>0&&totalMonths>0?`Example: ${historicalCount} completed months means Month ${historicalCount+1} becomes the LIVE takeover month.`:'Enter the completed-month count freely. It must be at least 1 and less than total months.'}</Text>
     <Input label="Total chit amount" value={totalAmount} onChangeText={setTotalAmount} keyboardType="decimal-pad"/>
     <Input label="Original start date (YYYY-MM-DD)" value={startDate} onChangeText={setStartDate}/><Input label="Due day" value={dueDay} onChangeText={setDueDay} keyboardType="numeric"/>
     <Card><Text style={s.section}>Backend historical defaults</Text><Text style={s.muted}>{`Contribution: ${money(installment)} per member/month`}</Text><Text style={s.muted}>Historical payment: CASH</Text><Text style={s.muted}>Historical payment date: month date</Text><Text style={s.muted}>Historical payout settlement: CASH</Text></Card>
     {isAdminUser?<Select label={loadingAgents?'Responsible agent (loading…)':'Responsible agent'} value={agentId} options={agentOptions} onChange={setAgentId} placeholder={loadingAgents?'Loading agents…':'Select responsible agent'}/>:<Text style={s.muted}>Responsible agent: logged-in agent is automatically resolved when you are an AGENT.</Text>}
-    <Text style={s.section}>AGENT_CHIT months</Text><Text style={s.muted}>Mark any month that was an Agent Chit. Agent payout is configured at the beginning and can differ from the total chit amount.</Text>
+    <Text style={s.section}>AGENT_CHIT month</Text><Text style={s.muted}>At most one month per chit can be an Agent Chit. Select that month and configure its agent payout. It defaults to the total chit amount but can be changed.</Text>
     <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginVertical:8}}>{monthOptions.map(m=><Button key={m} title={`Month ${m}${agentMonths.includes(m)?' ✓':''}`} secondary={!agentMonths.includes(m)} onPress={()=>toggleAgentMonth(m)}/>)}</View>
     {agentMonths.map(m=><Input key={m} label={`Agent payout · Month ${m}`} value={agentPayouts[m]||''} onChangeText={v=>setAgentPayouts(p=>({...p,[m]:v}))} keyboardType="decimal-pad"/>) }
     <Text style={s.muted}>{selectedAgent?`Responsible agent: ${selectedAgent.name}`:agentMonths.length&&!isAgentUser?'Select an agent before creating AGENT_CHIT months.':''}</Text>
