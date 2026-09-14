@@ -144,6 +144,19 @@ export class PaymentWorkflowService {
       throw new ConflictException('You do not have access to this chit');
     }
 
+    // Keep the history endpoint tolerant of legacy/historical payment rows.
+    // Some older rows may not have a matching obligation row, so an INNER JOIN
+    // would silently drop them. Also avoid binding nullable/boolean values into
+    // PostgreSQL predicates that can lead to type-inference errors.
+    const visibilityClause = isCreator || isAgentOperator
+      ? ''
+      : 'AND p.chit_participant_id=:requesterParticipantId';
+
+    const replacements: any = { chitId, monthId };
+    if (!isCreator && !isAgentOperator) {
+      replacements.requesterParticipantId = access[0].requester_participant_id;
+    }
+
     const [rows]: any = await this.sequelize.query(
       `SELECT
          p.id,p.chit_id,p.chit_month_id,p.chit_participant_id,p.obligation_id,
@@ -154,17 +167,11 @@ export class PaymentWorkflowService {
          o.status AS obligation_status
        FROM payments p
        JOIN chit_participants cp ON cp.id=p.chit_participant_id
-       JOIN contribution_obligations o ON o.id=p.obligation_id
+       LEFT JOIN contribution_obligations o ON o.id=p.obligation_id
        WHERE p.chit_id=:chitId AND p.chit_month_id=:monthId
-         AND (:isCreator=true OR :isAgentOperator=true
-              OR p.chit_participant_id=:requesterParticipantId)
+         ${visibilityClause}
        ORDER BY cp.participant_sequence,p.created_at`,
-      {
-        replacements: {
-          chitId, monthId, isCreator, isAgentOperator,
-          requesterParticipantId: access[0].requester_participant_id,
-        },
-      },
+      { replacements },
     );
 
     return {
@@ -187,9 +194,9 @@ export class PaymentWorkflowService {
           verifiedAt: p.verified_at,
           receiptNumber: p.receipt_number,
           notes: p.notes,
-          obligationDueAmount: Number(p.due_amount),
-          obligationPaidAmount: Number(p.obligation_paid_amount),
-          outstandingAmount: Number(p.outstanding_amount),
+          obligationDueAmount: p.due_amount == null ? null : Number(p.due_amount),
+          obligationPaidAmount: p.obligation_paid_amount == null ? null : Number(p.obligation_paid_amount),
+          outstandingAmount: p.outstanding_amount == null ? null : Number(p.outstanding_amount),
           obligationStatus: p.obligation_status,
           createdAt: p.created_at,
         })),

@@ -14,7 +14,7 @@ export class MemberDrawInterestService {
        FROM chit_participants cp
        WHERE cp.chit_id=:chitId
          AND cp.status='ACTIVE'
-         AND cp.user_id IN (
+         AND cp.user_id::text IN (
            SELECT DISTINCT (hm.historical_data->>'winnerMemberId')
            FROM chit_months hm
            WHERE hm.chit_id=:chitId
