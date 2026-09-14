@@ -33,6 +33,7 @@ export default function FixedDraw(){
  const month=chit.months?.find((m:any)=>String(m.id)===String(monthId));
  const revealStatus=String(state.revealStatus??state.reveal_status??'NONE').toUpperCase();
  const revealActive=revealStatus==='REVEALING'; const completed=revealStatus==='REVEALED'; const winnerSelected=Boolean(state?.winner); const drawCompleted=String(state?.status||'').toUpperCase()==='COMPLETED'; const payoutReady=Boolean(payout); const payoutVisible=Boolean(payoutReady&&(completed||winnerSelected||drawCompleted));
+ const myParticipant=state?.participants?.find((p:any)=>String(p.chit_participant_id??p.chitParticipantId)===String(user?.participantId)); const myEligible=!myParticipant||String(myParticipant.eligibility_status??myParticipant.eligibilityStatus??'ELIGIBLE').toUpperCase()==='ELIGIBLE';
  const interest=async(v:boolean)=>{setBusy(true);try{await drawsApi.interest(String(chitId),String(monthId),v);await load();Alert.alert('Interest saved',v?'Your interest has been recorded.':'Your preference has been recorded.')}catch(e){Alert.alert('Interest failed',errMsg(e))}finally{setBusy(false)}};
  const start=async()=>{setBusy(true);try{await drawsApi.start(String(chitId),{chitMonthId:String(monthId)});await load()}catch(e){Alert.alert('Start failed',errMsg(e))}finally{setBusy(false)}};
  const run=async()=>{setBusy(true);try{await drawsApi.run(String(chitId),String(monthId));await load()}catch(e){Alert.alert('Run failed',errMsg(e))}finally{setBusy(false)}};
@@ -45,8 +46,8 @@ export default function FixedDraw(){
    {payout.status==='SETTLED'&&<Text style={s.success}>✓ Winner payout settled. You can now close and lock the month.</Text>}
   </Card>}
   {!revealActive&&!completed&&!drawCompleted&&operate&&<Button title="Open / Restart Interest Window" onPress={start} disabled={busy}/>}
-  {!revealActive&&!completed&&!drawCompleted&&isMember(user)&&<Card><Text style={s.section}>My interest</Text><Text style={s.muted}>Express interest to participate in this month's draw.</Text><View style={s.row}><View style={{flex:1}}><Button title="Interested" onPress={()=>interest(true)} disabled={busy}/></View><View style={{flex:1}}><Button title="Not interested" secondary onPress={()=>interest(false)} disabled={busy}/></View></View></Card>}
-  {state.participants?.length>0&&<Card><Text style={s.section}>Eligible members</Text>{state.participants.map((p:any)=><Text key={p.id} style={{paddingVertical:6}}>{p.participant_sequence||p.participantSequence} · {p.interest_status||p.interestStatus}</Text>)}</Card>}
+  {!revealActive&&!completed&&!drawCompleted&&isMember(user)&&myEligible&&<Card><Text style={s.section}>My interest</Text><Text style={s.muted}>Express interest to participate in this month's draw.</Text><View style={s.row}><View style={{flex:1}}><Button title="Interested" onPress={()=>interest(true)} disabled={busy}/></View><View style={{flex:1}}><Button title="Not interested" secondary onPress={()=>interest(false)} disabled={busy}/></View></View></Card>}
+  {state.participants?.filter((p:any)=>String(p.eligibility_status??p.eligibilityStatus??'ELIGIBLE').toUpperCase()==='ELIGIBLE').length>0&&<Card><Text style={s.section}>Eligible members</Text>{state.participants.filter((p:any)=>String(p.eligibility_status??p.eligibilityStatus??'ELIGIBLE').toUpperCase()==='ELIGIBLE').map((p:any)=><Text key={p.id} style={{paddingVertical:6}}>{p.participant_sequence||p.participantSequence} · {p.interest_status||p.interestStatus}</Text>)}</Card>}
   {!revealActive&&!completed&&!drawCompleted&&operate&&<Button title="Run Draw Now" onPress={run} disabled={busy}/>}
  </ScrollView></Screen>;
 }

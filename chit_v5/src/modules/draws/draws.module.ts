@@ -17,12 +17,12 @@ class DrawsController{
  constructor(private readonly service:FixedDrawService,private readonly agentPayoutService:AgentPayoutRecoveryService,private readonly memberInterestService:MemberDrawInterestService){}
  @Post('chits/:chitId/start')
  @ApiOperation({summary:'Open a FIXED_DRAW month interest window. Does not select a winner.'})
- start(@Param('chitId')chitId:string,@Body()dto:StartDrawDto,@CurrentUser()user:any){return this.service.startDraw(chitId,dto,user.sub)}
+ async start(@Param('chitId')chitId:string,@Body()dto:StartDrawDto,@CurrentUser()user:any){const result=await this.service.startDraw(chitId,dto,user.sub);await this.memberInterestService.excludeHistoricalWinners(chitId,dto.chitMonthId);return result}
  @Post('chits/:chitId/months/:monthId/interest')
  @ApiOperation({summary:'Member expresses interest in the FIXED_DRAW month; the interest window is opened automatically if needed.'})
  interest(@Param('chitId')chitId:string,@Param('monthId')monthId:string,@Body()dto:DrawInterestDto,@CurrentUser()user:any){return this.memberInterestService.setInterest(chitId,monthId,user.sub,dto.interested)}
  @Get('chits/:chitId/months/:monthId')
- get(@Param('chitId')chitId:string,@Param('monthId')monthId:string,@CurrentUser()user:any){return this.service.getDraw(chitId,monthId,user.sub)}
+ async get(@Param('chitId')chitId:string,@Param('monthId')monthId:string,@CurrentUser()user:any){await this.memberInterestService.excludeHistoricalWinners(chitId,monthId);return this.service.getDraw(chitId,monthId,user.sub)}
  @Post('chits/:chitId/months/:monthId/run')
  run(@Param('chitId')chitId:string,@Param('monthId')monthId:string,@CurrentUser()user:any){return this.service.runDraw(chitId,monthId,user.sub)}
  @Post('chits/:chitId/months/:monthId/agent-payout')

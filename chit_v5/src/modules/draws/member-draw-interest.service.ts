@@ -5,6 +5,43 @@ import { Sequelize } from 'sequelize-typescript';
 export class MemberDrawInterestService {
   constructor(private readonly db: Sequelize) {}
 
+  async excludeHistoricalWinners(chitId: string, monthId: string, transaction?: any) {
+    // Historical running-chit winners are stored in chit_months.historical_data,
+    // not in draw_winners/auction_winners. Mark them excluded in the live draw
+    // so they cannot express interest or be selected again.
+    const [rows]: any = await this.db.query(
+      `SELECT cp.id
+       FROM chit_participants cp
+       WHERE cp.chit_id=:chitId
+         AND cp.status='ACTIVE'
+         AND cp.user_id IN (
+           SELECT DISTINCT (hm.historical_data->>'winnerMemberId')
+           FROM chit_months hm
+           WHERE hm.chit_id=:chitId
+             AND hm.id<>:monthId
+             AND UPPER(COALESCE(hm.data_origin,''))='HISTORICAL'
+             AND hm.historical_data->>'winnerMemberId' IS NOT NULL
+         )`,
+      { replacements: { chitId, monthId }, transaction },
+    );
+
+    if (!rows.length) return;
+
+    await this.db.query(
+      `UPDATE draw_participants dp
+       SET eligibility_status='EXCLUDED',
+           exclusion_reason='PREVIOUS_WINNER',
+           updated_at=NOW()
+       FROM draws d
+       WHERE dp.draw_id=d.id
+         AND d.chit_id=:chitId
+         AND d.chit_month_id=:monthId
+         AND dp.chit_participant_id IN (:participantIds)
+         AND dp.eligibility_status='ELIGIBLE'`,
+      { replacements: { chitId, monthId, participantIds: rows.map((r: any) => r.id) }, transaction },
+    );
+  }
+
   async setInterest(chitId: string, monthId: string, actorUserId: string, interested: boolean) {
     return this.db.transaction(async transaction => {
       // Lock the month first so two members cannot create two draw records concurrently.
@@ -124,6 +161,7 @@ export class MemberDrawInterestService {
       }
 
       const draw = drawRows[0];
+      await this.excludeHistoricalWinners(chitId, monthId, transaction);
       if (String(draw.status).toUpperCase() === 'COMPLETED')
         throw new ConflictException('Draw is already completed');
 
@@ -131,6 +169,7 @@ export class MemberDrawInterestService {
         `SELECT dp.id,dp.draw_id,dp.interest_status,dp.interest_at
          FROM draw_participants dp
          WHERE dp.draw_id=:drawId AND dp.chit_participant_id=:participantId
+           AND dp.eligibility_status='ELIGIBLE'
          FOR UPDATE`,
         { replacements: { drawId: draw.id, participantId: member.id }, transaction },
       );
