@@ -93,7 +93,7 @@ export default function ExistingChit(){
     payoutComponents:[{amount:payout.toFixed(2),method:'CASH'}],payments:payRows
    });
    if(monthIndex<historicalCount){const next=monthIndex+1;setMonthIndex(next);const nm=created.months?.find((m:any)=>Number(m.month_number)===next);setMonthDate(nm?.scheduled_date||startDate);setFixedPayout(String(nm?.winner_payout_amount??face));setDiscount('');setWinner('');setNotes('');}
-   else{await runningChitApi.activate(String(created.id),String(historicalCount+1));Alert.alert('Running chit activated',`Month ${historicalCount+1} is now the live takeover month.`);router.replace({pathname:'/chit-detail',params:{chitId:String(created.id)}})}
+   else{try{await runningChitApi.activate(String(created.id),String(historicalCount+1));Alert.alert('Running chit activated',`Month ${historicalCount+1} is now the live takeover month.`);}catch(e){Alert.alert('Historical months finalized',`All ${historicalCount} historical months are finalized and locked. Month ${historicalCount+1} can be activated from the chit after the API deployment is refreshed.`);}router.replace({pathname:'/chit-detail',params:{chitId:String(created.id)}})}
   }catch(e){Alert.alert('Finalize failed',errMsg(e))}finally{setBusy(false)}
  };
 
