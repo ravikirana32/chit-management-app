@@ -1,440 +1,133 @@
-import React,{useMemo,useState}from'react';
+import React,{useEffect,useMemo,useState}from'react';
 import{Alert,ScrollView,Text,View}from'react-native';
 import{router}from'expo-router';
-import{runningChitApi}from'@/src/api/all';
-import{Badge,Button,Card,Input,Screen,s}from'@/src/components/UI';
+import{chitsApi,runningChitApi,usersApi}from'@/src/api/all';
+import{Button,Card,Input,Screen,Select,s,Badge,Loading}from'@/src/components/UI';
+import{useAuth}from'@/src/state/Auth';
+import{isAdmin,isAgent}from'@/src/state/roles';
 import{errMsg,money}from'@/src/lib/format';
 
-type Member={identifier:string;sequence:number};
-type Month={completedAt:string;winner:string;discount:string;notes:string};
-
-const blankMonth=(n:number):Month=>({
-  completedAt:'',
-  winner:'',
-  discount:'',
-  notes:'',
-});
-
-const isMobile=(v:string)=>/^\+?[0-9 ()-]{7,}$/.test(v.trim());
-const num=(v:any)=>Number(v||0);
+const n=(v:any,d=0)=>{const x=Number(v);return Number.isFinite(x)?x:d};
 
 export default function ExistingChit(){
-  const[name,setName]=useState('');
-  const[description,setDescription]=useState('');
-  const[type,setType]=useState<'FIXED_DRAW'|'AUCTION'>('FIXED_DRAW');
-  const[membersCount,setMembersCount]=useState('5');
-  const[totalMonths,setTotalMonths]=useState('20');
-  const[historicalCount,setHistoricalCount]=useState('4');
-  const[startDate,setStartDate]=useState(new Date().toISOString().slice(0,10));
-  const[dueDay,setDueDay]=useState('5');
-  const[face,setFace]=useState('1000000');
-  const[creatorParticipates,setCreatorParticipates]=useState(false);
-  const[agentId,setAgentId]=useState('');
-  const[members,setMembers]=useState<Member[]>([{identifier:'',sequence:1}]);
-  const[chitId,setChitId]=useState('');
-  const[current,setCurrent]=useState(1);
-  const[months,setMonths]=useState<Record<number,Month>>({});
-  const[busy,setBusy]=useState(false);
-  const[created,setCreated]=useState(false);
-  const[completed,setCompleted]=useState<number[]>([]);
+ const{user}=useAuth();
+ const[phase,setPhase]=useState<'create'|'history'>('create');
+ const[busy,setBusy]=useState(false);const[loadingAgents,setLoadingAgents]=useState(false);
+ const[created,setCreated]=useState<any>(null);const[monthIndex,setMonthIndex]=useState(1);
+ const[agents,setAgents]=useState<any[]>([]);
+ const[name,setName]=useState('');const[description,setDescription]=useState('');const[type,setType]=useState<'FIXED_DRAW'|'AUCTION'>('FIXED_DRAW');
+ const[members,setMembers]=useState(4);const[totalMonths,setTotalMonths]=useState(6);const[historicalCount,setHistoricalCount]=useState(2);
+ const[totalAmount,setTotalAmount]=useState('20000');const[startDate,setStartDate]=useState(new Date().toISOString().slice(0,10));const[dueDay,setDueDay]=useState('5');
+ const[agentId,setAgentId]=useState('');const[creatorParticipates,setCreatorParticipates]=useState(false);
+ const[memberInputs,setMemberInputs]=useState<string[]>(['','','','']);
+ const[agentMonths,setAgentMonths]=useState<number[]>([]);const[agentPayouts,setAgentPayouts]=useState<Record<number,string>>({});
+ const[monthDate,setMonthDate]=useState('');const[winner,setWinner]=useState('');const[fixedPayout,setFixedPayout]=useState('');const[discount,setDiscount]=useState('');const[notes,setNotes]=useState('');
+ const face=n(totalAmount);const installment=members>0?face/members:0;
+ const isAdminUser=isAdmin(user);const isAgentUser=isAgent(user);
 
-  const nMembers=Math.max(2,Number(membersCount)||2);
-  const nMonths=Math.max(2,Number(totalMonths)||2);
-  const historicalMonths=Math.max(1,Math.min(nMonths-1,Number(historicalCount)||1));
-  const installment=Number(face)>0?Number(face)/nMembers:0;
-  const month=months[current]||blankMonth(current);
+ const loadAgents=async()=>{
+  if(!isAdminUser)return;
+  setLoadingAgents(true);
+  try{const r=await usersApi.adminAgents();setAgents(Array.isArray(r.data?.data)?r.data.data:(Array.isArray(r.data)?r.data:[]));}
+  catch(e){Alert.alert('Unable to load agents',errMsg(e));}
+  finally{setLoadingAgents(false)}
+ };
+ useEffect(()=>{if(isAdminUser)loadAgents()},[isAdminUser]);
 
-  const setMonth=(patch:Partial<Month>)=>
-    setMonths(x=>({...x,[current]:{...month,...patch}}));
+ useEffect(()=>{
+  setMemberInputs(prev=>Array.from({length:members},(_,i)=>prev[i]||''));
+ },[members]);
 
-  const updateMember=(i:number,v:string)=>
-    setMembers(x=>x.map((m,j)=>j===i?{...m,identifier:v}:m));
+ const monthOptions=useMemo(()=>Array.from({length:Math.max(0,totalMonths)},(_,i)=>i+1),[totalMonths]);
+ const agentOptions=agents.filter(a=>String(a.status||'ACTIVE').toUpperCase()==='ACTIVE').map(a=>({label:`${a.name||'Agent'} · ${a.mobile||a.userId||a.id}`,value:String(a.id)}));
+ const selectedAgent=agents.find(a=>String(a.id)===String(agentId));
+ const toggleAgentMonth=(m:number)=>{
+  setAgentMonths(prev=>prev.includes(m)?prev.filter(x=>x!==m):[...prev,m].sort((a,b)=>a-b));
+  setAgentPayouts(prev=>prev[m]?prev:{...prev,[m]:face>0?face.toFixed(2):''});
+ };
+ const payoutForMonth=(m:number)=>n(agentPayouts[m],face);
 
-  const setMemberCount=(value:string)=>{
-    setMembersCount(value);
-    const n=Math.max(2,Number(value)||2);
-    setMembers(x=>Array.from({length:n},(_,i)=>x[i]||{identifier:'',sequence:i+1}));
-  };
+ const create=async()=>{
+  if(!name.trim())return Alert.alert('Chit name required');
+  if(members<2||totalMonths<2)return Alert.alert('Members and total months must be at least 2');
+  if(historicalCount<1||historicalCount>=totalMonths)return Alert.alert('Completed months must be between 1 and total months - 1');
+  if(!face||face<=0)return Alert.alert('Total chit amount must be positive');
+  if(!startDate.match(/^\d{4}-\d{2}-\d{2}$/))return Alert.alert('Enter original start date as YYYY-MM-DD');
+  const memberRows=memberInputs.slice(0,members).map(v=>v.trim()).filter(Boolean);
+  if(memberRows.length!==members)return Alert.alert(`Enter all ${members} existing member UUID/mobile values`);
+  if(new Set(memberRows).size!==memberRows.length)return Alert.alert('Duplicate members are not allowed');
+  if(agentMonths.length&&!agentId&&!isAgentUser)return Alert.alert('Select the responsible agent before marking AGENT_CHIT months');
+  const payoutAmounts=Array.from({length:totalMonths},(_,i)=>agentMonths.includes(i+1)?payoutForMonth(i+1):undefined);
+  if(agentMonths.some(m=>payoutForMonth(m)<=0))return Alert.alert('Every AGENT_CHIT month needs a positive agent payout');
+  setBusy(true);
+  try{
+   const r=await runningChitApi.create({name:name.trim(),description:description.trim()||undefined,chitType:type,totalMembers:members,totalMonths,historicalMonthCount:historicalCount,originalStartDate:startDate,dueDay:n(dueDay,5),totalChitAmount:face.toFixed(2),creatorParticipates,agentId:agentId||undefined,members:memberRows.map((v,i)=>v.includes('-')?{userId:v,sequence:i+1}:{mobile:v,sequence:i+1}),agentMonthNumbers:agentMonths,payoutAmounts:payoutAmounts.map(v=>v==null?'':String(v))});
+   const d=r.data?.data??r.data;setCreated(d);setMonthIndex(1);setMonthDate(d?.months?.[0]?.scheduled_date||startDate);setFixedPayout(String(d?.months?.[0]?.winner_payout_amount??face));setDiscount('');setWinner('');setNotes('');setPhase('history');
+  }catch(e){Alert.alert('Create failed',errMsg(e))}finally{setBusy(false)}
+ };
 
-  const calculatedDate=(monthNumber:number)=>{
-    const date=new Date(startDate);
-    date.setMonth(date.getMonth()+monthNumber-1);
-    date.setDate(Math.min(28,Math.max(1,Number(dueDay)||1)));
-    return date.toISOString().slice(0,10);
-  };
+ const finalize=async()=>{
+  if(!created?.id)return;
+  if(!monthDate.match(/^\d{4}-\d{2}-\d{2}$/))return Alert.alert('Enter month date as YYYY-MM-DD');
+  const month=created.months?.find((m:any)=>Number(m.month_number)===monthIndex);
+  const monthType=String(month?.month_type||'ACTION').toUpperCase();
+  const agentMonth=monthType==='AGENT_CHIT';
+  const payout=agentMonth?payoutForMonth(monthIndex):n(fixedPayout,0);
+  if(monthType==='FIXED_DRAW'&&payout<=0)return Alert.alert('Enter the actual Fixed Draw payout for this historical month');
+  if(agentMonth&&payout<=0)return Alert.alert('Enter the Agent Chit payout for this historical month');
+  if(type==='AUCTION'&&n(discount,0)<0)return Alert.alert('Auction discount cannot be negative');
+  if(!agentMonth&&!winner.trim())return Alert.alert(`${type==='AUCTION'?'Auction':'Fixed Draw'} historical month requires a winner`);
+  const payRows=memberInputs.slice(0,members).map((v,i)=>({memberId:v.trim(),amount:installment.toFixed(2),method:'CASH',paymentDate:monthDate}));
+  if(payRows.some(x=>!x.memberId))return Alert.alert('All member values are required');
+  setBusy(true);
+  try{
+   await runningChitApi.finalize(String(created.id),String(monthIndex),{
+    contributionPerMember:installment.toFixed(2),completedAt:monthDate,openingSavings:'0',collectedAmount:(installment*members).toFixed(2),
+    winnerMemberId:agentMonth?undefined:winner.trim(),payoutAmount:payout.toFixed(2),discountAmount:type==='AUCTION'?n(discount,0).toFixed(2):'0',notes:notes.trim()||undefined,
+    payoutComponents:[{amount:payout.toFixed(2),method:'CASH'}],payments:payRows
+   });
+   if(monthIndex<historicalCount){const next=monthIndex+1;setMonthIndex(next);const nm=created.months?.find((m:any)=>Number(m.month_number)===next);setMonthDate(nm?.scheduled_date||startDate);setFixedPayout(String(nm?.winner_payout_amount??face));setDiscount('');setWinner('');setNotes('');}
+   else{await runningChitApi.activate(String(created.id),String(historicalCount+1));Alert.alert('Running chit activated',`Month ${historicalCount+1} is now the live takeover month.`);router.replace({pathname:'/chit-detail',params:{chitId:String(created.id)}})}
+  }catch(e){Alert.alert('Finalize failed',errMsg(e))}finally{setBusy(false)}
+ };
 
-  const calculatedPayout=useMemo(()=>{
-    if(type==='FIXED_DRAW')return Number(face)||0;
-    const discount=num(month.discount);
-    return Math.max(0,(Number(face)||0)-discount);
-  },[type,face,month.discount]);
+ if(phase==='create')return <Screen title="Running Chit Onboarding" subtitle="Create a chit that already started outside the app" back={()=>router.back()}>
+  <ScrollView>
+   <Card><Text style={s.section}>1 · Running chit basics</Text><Text style={s.muted}>Only historical outcome data is entered later. Collections, savings and payout accounting are calculated by the backend.</Text>
+    <Input label="Chit name" value={name} onChangeText={setName}/><Input label="Description" value={description} onChangeText={setDescription} multiline/>
+    <View style={s.row}><Button title="FIXED DRAW" secondary={type!=='FIXED_DRAW'} onPress={()=>setType('FIXED_DRAW')}/><Button title="AUCTION" secondary={type!=='AUCTION'} onPress={()=>setType('AUCTION')}/></View>
+    <View style={s.row}><View style={{flex:1}}><Input label="Members" value={String(members)} onChangeText={v=>setMembers(Math.max(2,Math.floor(n(v,2))))} keyboardType="numeric"/></View><View style={{flex:1}}><Input label="Total months" value={String(totalMonths)} onChangeText={v=>setTotalMonths(Math.max(2,Math.floor(n(v,2))))} keyboardType="numeric"/></View></View>
+    <Input label="Completed months outside the app" value={String(historicalCount)} onChangeText={v=>setHistoricalCount(Math.max(1,Math.min(totalMonths-1,Math.floor(n(v,1)))))} keyboardType="numeric"/>
+    <Text style={s.muted}>{`Example: ${historicalCount} completed months means Month ${historicalCount+1} becomes the LIVE takeover month.`}</Text>
+    <Input label="Total chit amount" value={totalAmount} onChangeText={setTotalAmount} keyboardType="decimal-pad"/>
+    <Input label="Original start date (YYYY-MM-DD)" value={startDate} onChangeText={setStartDate}/><Input label="Due day" value={dueDay} onChangeText={setDueDay} keyboardType="numeric"/>
+    <Card><Text style={s.section}>Backend historical defaults</Text><Text style={s.muted}>{`Contribution: ${money(installment)} per member/month`}</Text><Text style={s.muted}>Historical payment: CASH</Text><Text style={s.muted}>Historical payment date: month date</Text><Text style={s.muted}>Historical payout settlement: CASH</Text></Card>
+    {isAdminUser?<Select label={loadingAgents?'Responsible agent (loading…)':'Responsible agent'} value={agentId} options={agentOptions} onChange={setAgentId} placeholder={loadingAgents?'Loading agents…':'Select responsible agent'}/>:<Text style={s.muted}>Responsible agent: logged-in agent is automatically resolved when you are an AGENT.</Text>}
+    <Text style={s.section}>AGENT_CHIT months</Text><Text style={s.muted}>Mark any month that was an Agent Chit. Agent payout is configured at the beginning and can differ from the total chit amount.</Text>
+    <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginVertical:8}}>{monthOptions.map(m=><Button key={m} title={`Month ${m}${agentMonths.includes(m)?' ✓':''}`} secondary={!agentMonths.includes(m)} onPress={()=>toggleAgentMonth(m)}/>)}</View>
+    {agentMonths.map(m=><Input key={m} label={`Agent payout · Month ${m}`} value={agentPayouts[m]||''} onChangeText={v=>setAgentPayouts(p=>({...p,[m]:v}))} keyboardType="decimal-pad"/>) }
+    <Text style={s.muted}>{selectedAgent?`Responsible agent: ${selectedAgent.name}`:agentMonths.length&&!isAgentUser?'Select an agent before creating AGENT_CHIT months.':''}</Text>
+   </Card>
+   <Card><Text style={s.section}>2 · Existing members</Text><Text style={s.muted}>Enter each existing application user's UUID or mobile number. No invitation or live payment workflow is triggered.</Text>{memberInputs.slice(0,members).map((v,i)=><Input key={i} label={`Member ${i+1}`} value={v} onChangeText={x=>setMemberInputs(p=>p.map((q,j)=>j===i?x:q))} placeholder="User UUID or mobile"/>)}</Card>
+   <Button title="Create Running Chit & Generate Schedule" onPress={create} disabled={busy}/>
+  </ScrollView>
+ </Screen>;
 
-  const create=async()=>{
-    if(!name.trim())return Alert.alert('Name required','Enter the chit name.');
-    if(members.length!==nMembers)return Alert.alert('Members required',`Add exactly ${nMembers} members.`);
-    if(members.some(m=>!m.identifier.trim()))
-      return Alert.alert('Member required','Every member must have an existing user UUID or mobile number.');
-    if(new Set(members.map(m=>m.identifier.trim())).size!==members.length)
-      return Alert.alert('Duplicate member','Each member must be unique.');
-    if(!Number.isFinite(Number(face))||Number(face)<=0)
-      return Alert.alert('Invalid chit amount','Enter a positive total chit amount.');
-    setBusy(true);
-    try{
-      const r=await runningChitApi.create({
-        name:name.trim(),
-        description:description.trim()||undefined,
-        chitType:type,
-        totalMembers:nMembers,
-        totalMonths:nMonths,
-        historicalMonthCount:historicalMonths,
-        originalStartDate:startDate,
-        dueDay:Math.min(28,Math.max(1,Number(dueDay)||1)),
-        totalChitAmount:Number(face).toFixed(2),
-        creatorParticipates,
-        agentId:agentId.trim()||undefined,
-        members:members.map(m=>({
-          mobile:isMobile(m.identifier)?m.identifier.trim():undefined,
-          userId:isMobile(m.identifier)?undefined:m.identifier.trim(),
-          sequence:m.sequence,
-        })),
-        monthlyAmounts:Array(nMonths).fill(installment.toFixed(2)),
-        payoutAmounts:type==='FIXED_DRAW'
-          ?Array(nMonths).fill(Number(face).toFixed(2))
-          :Array(nMonths).fill(Number(face).toFixed(2)),
-      });
-      const d=r.data?.data??r.data;
-      if(!d?.id)throw new Error(r.data?.message||'Unable to create running chit');
-      setChitId(String(d.id));
-      setCreated(true);
-      setCurrent(1);
-      setCompleted([]);
-      setMonths({});
-      Alert.alert(
-        'Running chit created',
-        `Now enter only the real historical outcome for each completed month. Collections and financial totals are derived by the backend.`
-      );
-    }catch(e){
-      Alert.alert('Create running chit failed',errMsg(e));
-    }finally{setBusy(false)}
-  };
-
-  const validateMonth=()=>{
-    const errors:string[]=[];
-    const date=month.completedAt||calculatedDate(current);
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(date))
-      errors.push('Enter the month date as YYYY-MM-DD.');
-
-    if(!month.winner.trim())
-      errors.push('Winner is required.');
-
-    const winnerExists=members.some(m=>m.identifier.trim()===month.winner.trim());
-    if(!winnerExists)
-      errors.push('Winner must match one of the configured member UUIDs/mobile numbers.');
-
-    if(type==='AUCTION'){
-      const discount=num(month.discount);
-      if(!Number.isFinite(discount)||discount<0||discount>Number(face))
-        errors.push('Enter a valid auction discount.');
-    }
-
-    if(type==='FIXED_DRAW'&&num(face)<=0)
-      errors.push('Invalid chit amount.');
-
-    return errors;
-  };
-
-  const buildHistoricalPayments=()=>{
-    return members.map(m=>({
-      memberId:m.identifier.trim(),
-      amount:installment.toFixed(2),
-      method:'CASH',
-      paymentDate:(month.completedAt||calculatedDate(current)),
-      reference:undefined,
-      notes:'Historical running-chit payment; default CASH',
-    }));
-  };
-
-  const finalize=async()=>{
-    const errors=validateMonth();
-    if(errors.length)return Alert.alert('Review historical month',errors.join('\n'));
-
-    const date=month.completedAt||calculatedDate(current);
-    const payout=type==='FIXED_DRAW'
-      ?Number(face)
-      :Math.max(0,Number(face)-num(month.discount));
-
-    // Commit 09 derives these values again on the server. They are included here
-    // only for compatibility with the existing endpoint contract; no financial
-    // total is exposed as an editable UI field.
-    const collected=installment*nMembers;
-    const opening=0;
-    const closing=Math.max(0,collected-payout);
-
-    setBusy(true);
-    try{
-      const r=await runningChitApi.finalize(chitId,String(current),{
-        contributionPerMember:installment.toFixed(2),
-        completedAt:date,
-        openingSavings:opening.toFixed(2),
-        collectedAmount:collected.toFixed(2),
-        winnerMemberId:month.winner.trim(),
-        payoutAmount:payout.toFixed(2),
-        discountAmount:type==='AUCTION'?num(month.discount).toFixed(2):'0.00',
-        winnerReference:undefined,
-        notes:month.notes.trim()||undefined,
-        payoutComponents:[{
-          amount:payout.toFixed(2),
-          method:'CASH',
-          reference:undefined,
-          notes:'Historical payout default CASH',
-        }],
-        payments:buildHistoricalPayments(),
-      });
-
-      if(!r.data?.success)
-        throw new Error(r.data?.message||'Finalize failed');
-
-      setCompleted(x=>x.includes(current)?x:[...x,current]);
-
-      if(current<historicalMonths){
-        const next=current+1;
-        setCurrent(next);
-        setMonths(x=>({...x,[next]:blankMonth(next)}));
-        Alert.alert(
-          `Month ${current} locked`,
-          `Historical Month ${current} is finalized and locked. Continue with Month ${next}.`
-        );
-      }else{
-        const takeover=historicalMonths+1;
-        setCurrent(takeover);
-        setMonths(x=>({...x,[takeover]:x[takeover]||blankMonth(takeover)}));
-        Alert.alert(
-          'Historical entry complete',
-          `Months 1-${historicalMonths} are locked. Month ${takeover} is the first LIVE month.`
-        );
-      }
-    }catch(e){
-      Alert.alert(`Finalize Month ${current} failed`,errMsg(e));
-    }finally{setBusy(false)}
-  };
-
-  const activate=async()=>{
-    if(completed.length!==historicalMonths)
-      return Alert.alert(
-        'Historical months incomplete',
-        `Finalize all ${historicalMonths} historical month(s) before activation.`
-      );
-
-    setBusy(true);
-    try{
-      const takeover=historicalMonths+1;
-      const r=await runningChitApi.activate(chitId,String(takeover));
-      if(!r.data?.success)
-        throw new Error(r.data?.message||'Activation failed');
-
-      Alert.alert(
-        'Running chit activated',
-        `Month ${takeover} is now a normal LIVE month. Historical months remain locked.`,
-        [{text:'Open chit',onPress:()=>router.replace({pathname:'/chit-detail',params:{chitId}})}]
-      );
-    }catch(e){
-      Alert.alert('Activation failed',errMsg(e));
-    }finally{setBusy(false)}
-  };
-
-  const progress=`${completed.length}/${historicalMonths} historical months locked`;
-
-  return <Screen
-    title="Running Chit Onboarding"
-    subtitle={created?`Historical Month ${current} · ${progress}`:'Create a chit that already started outside the app'}
-    back={()=>router.back()}
-  >
-    <ScrollView keyboardShouldPersistTaps="handled">
-
-      {!created&&<>
-        <Card>
-          <Text style={s.section}>1 · Running chit basics</Text>
-          <Text style={s.muted}>
-            Create the chit in the app and tell us how many months were already completed outside the app.
-            Only historical outcome data is entered afterward.
-          </Text>
-
-          <Input label="Chit name" value={name} onChangeText={setName}/>
-          <Input label="Description" value={description} onChangeText={setDescription} multiline/>
-
-          <View style={s.row}>
-            <Button title="FIXED DRAW" secondary={type!=='FIXED_DRAW'} onPress={()=>setType('FIXED_DRAW')}/>
-            <Button title="AUCTION" secondary={type!=='AUCTION'} onPress={()=>setType('AUCTION')}/>
-          </View>
-
-          <View style={s.row}>
-            <View style={{flex:1}}>
-              <Input label="Members" value={membersCount} onChangeText={setMemberCount} keyboardType="number-pad"/>
-            </View>
-            <View style={{flex:1}}>
-              <Input label="Total months" value={totalMonths} onChangeText={setTotalMonths} keyboardType="number-pad"/>
-            </View>
-          </View>
-
-          <Input
-            label="Completed months outside the app"
-            value={historicalCount}
-            onChangeText={setHistoricalCount}
-            keyboardType="number-pad"
-          />
-
-          <Text style={s.muted}>
-            Example: 4 completed months means Month 5 becomes the LIVE takeover month.
-          </Text>
-
-          <Input label="Total chit amount" value={face} onChangeText={setFace} keyboardType="decimal-pad"/>
-          <Input label="Original start date (YYYY-MM-DD)" value={startDate} onChangeText={setStartDate}/>
-          <Input label="Due day" value={dueDay} onChangeText={setDueDay} keyboardType="number-pad"/>
-
-          <Card>
-            <Text style={{fontWeight:'800'}}>Backend historical defaults</Text>
-            <Text style={s.muted}>
-              Contribution: {money(installment)} per member/month
-            </Text>
-            <Text style={s.muted}>Historical payment: CASH</Text>
-            <Text style={s.muted}>Historical payment date: month date</Text>
-            <Text style={s.muted}>Historical payout: CASH</Text>
-          </Card>
-
-          <Input
-            label="Responsible agent UUID (optional; logged-in agent is auto-resolved)"
-            value={agentId}
-            onChangeText={setAgentId}
-          />
-
-          <Button
-            title={creatorParticipates?'Creator participates: YES':'Creator participates: NO'}
-            secondary
-            onPress={()=>setCreatorParticipates(v=>!v)}
-          />
-        </Card>
-
-        <Card>
-          <Text style={s.section}>2 · Existing members</Text>
-          <Text style={s.muted}>
-            Enter an existing application user's UUID or mobile number. No invitation or live payment workflow is triggered.
-          </Text>
-
-          {members.map((m,i)=>
-            <Input
-              key={i}
-              label={`Member ${i+1}`}
-              value={m.identifier}
-              onChangeText={v=>updateMember(i,v)}
-              placeholder="User UUID or mobile"
-            />
-          )}
-        </Card>
-
-        <Button title="Create Running Chit & Generate Schedule" onPress={create} disabled={busy}/>
-      </>}
-
-      {created&&<>
-        <Card>
-          <View style={s.row}>
-            <Text style={s.section}>Historical onboarding</Text>
-            <Badge tone="green">RUNNING CHIT</Badge>
-          </View>
-          <Text>Chit ID: {chitId}</Text>
-          <Text>Total members: {nMembers}</Text>
-          <Text>Total months: {nMonths}</Text>
-          <Text>Historical months: {historicalMonths}</Text>
-          <Text>Takeover month: {historicalMonths+1}</Text>
-          <Text style={s.muted}>
-            {progress}. Historical months are direct-entry history and remain locked after finalization.
-          </Text>
-        </Card>
-
-        {current<=historicalMonths&&
-          <Card>
-            <View style={s.row}>
-              <Text style={s.section}>Historical Month {current}</Text>
-              <Badge tone="purple">HISTORICAL</Badge>
-            </View>
-
-            <Text style={s.muted}>
-              Enter only what actually happened. Collection, savings, and payout totals are calculated by the backend.
-            </Text>
-
-            <Input
-              label="Month date (YYYY-MM-DD)"
-              value={month.completedAt}
-              onChangeText={v=>setMonth({completedAt:v})}
-              placeholder={calculatedDate(current)}
-            />
-
-            <Input
-              label="Winner UUID/mobile"
-              value={month.winner}
-              onChangeText={v=>setMonth({winner:v})}
-              placeholder="Existing member"
-            />
-
-            {type==='FIXED_DRAW'
-              ? <Card>
-                  <Text style={{fontWeight:'800'}}>Fixed Draw payout</Text>
-                  <Text style={{fontSize:22,fontWeight:'900'}}>{money(Number(face)||0)}</Text>
-                  <Text style={s.muted}>Derived automatically from the chit amount. No payout amount entry is required.</Text>
-                </Card>
-              : <Card>
-                  <Text style={s.section}>Auction outcome</Text>
-                  <Input
-                    label="Auction discount"
-                    value={month.discount}
-                    onChangeText={v=>setMonth({discount:v})}
-                    keyboardType="decimal-pad"
-                  />
-                  <Text style={s.muted}>
-                    Derived payout: {money(calculatedPayout)}
-                  </Text>
-                </Card>
-            }
-
-            <Input
-              label="Notes (optional)"
-              value={month.notes}
-              onChangeText={v=>setMonth({notes:v})}
-              multiline
-            />
-
-            <Card>
-              <Text style={{fontWeight:'800'}}>Automatic historical accounting</Text>
-              <Text style={s.muted}>
-                {nMembers} member payments × {money(installment)} = {money(installment*nMembers)} collection
-              </Text>
-              <Text style={s.muted}>Payment method: CASH</Text>
-              <Text style={s.muted}>Payment date: {month.completedAt||calculatedDate(current)}</Text>
-              <Text style={s.muted}>Payout method: CASH</Text>
-            </Card>
-
-            <Button
-              title={`Finalize & Lock Historical Month ${current}`}
-              onPress={finalize}
-              disabled={busy}
-            />
-          </Card>
-        }
-
-        {current>historicalMonths&&
-          <Card>
-            <Text style={s.section}>Historical onboarding complete</Text>
-            <Badge tone="green">ALL HISTORICAL MONTHS LOCKED</Badge>
-            <Text style={{marginTop:8}}>
-              Months 1-{historicalMonths} are permanently historical.
-            </Text>
-            <Text style={s.muted}>
-              Month {historicalMonths+1} is the first LIVE month. Activate it only after confirming the historical data.
-            </Text>
-            <Button title={`Activate Live Month ${historicalMonths+1}`} onPress={activate} disabled={busy}/>
-          </Card>
-        }
-      </>}
-
-    </ScrollView>
-  </Screen>;
+ const currentMonth=created?.months?.find((m:any)=>Number(m.month_number)===monthIndex);const currentType=String(currentMonth?.month_type||'ACTION').toUpperCase();const agentHistorical=currentType==='AGENT_CHIT';
+ return <Screen title="Running Chit Onboarding" subtitle={`Historical Month ${monthIndex} · ${Math.max(0,monthIndex-1)}/${historicalCount} historical months locked`} back={()=>router.back()}>
+  <ScrollView>
+   <Card><Text style={s.section}>Historical onboarding</Text><Text style={s.muted}>{`Chit ID: ${created?.id||'—'}`}</Text><Text style={s.muted}>{`Total members: ${members}`}</Text><Text style={s.muted}>{`Total months: ${totalMonths}`}</Text><Text style={s.muted}>{`Historical months: ${historicalCount}`}</Text><Text style={s.muted}>{`${Math.max(0,monthIndex-1)}/${historicalCount} historical months locked. Historical months are direct-entry history and remain locked after finalization.`}</Text></Card>
+   <Card><View style={s.row}><Text style={s.section}>Historical Month {monthIndex}</Text><Badge tone={agentHistorical?'green':'purple'}>{agentHistorical?'AGENT CHIT':'HISTORICAL'}</Badge></View><Text style={s.muted}>Enter only what actually happened. Collection, savings and payout totals are calculated by the backend.</Text>
+    <Input label="Month date (YYYY-MM-DD)" value={monthDate} onChangeText={setMonthDate}/>
+    {!agentHistorical&&<Input label="Winner UUID/mobile" value={winner} onChangeText={setWinner} placeholder="Existing member"/>}
+    {type==='FIXED_DRAW'&&!agentHistorical&&<Input label="Fixed Draw payout (actual historical payout)" value={fixedPayout} onChangeText={setFixedPayout} keyboardType="decimal-pad"/>}
+    {agentHistorical&&<Card><Text style={s.section}>Configured Agent Chit payout</Text><Text style={s.success}>{money(payoutForMonth(monthIndex))}</Text><Text style={s.muted}>This amount was decided in the initial onboarding configuration and is carried into the historical month. Change it in the initial AGENT_CHIT month configuration before creating the running chit.</Text></Card>}
+    {type==='AUCTION'&&!agentHistorical&&<Input label="Auction discount" value={discount} onChangeText={setDiscount} keyboardType="decimal-pad"/>}
+    <Card><Text style={s.section}>{agentHistorical?'Agent Chit payout':'Historical payout'}</Text><Text style={s.success}>{money(agentHistorical?payoutForMonth(monthIndex):type==='AUCTION'?face-n(discount,0):n(fixedPayout,0))}</Text><Text style={s.muted}>{agentHistorical?'No draw / no auction. Agent receives the configured monthly payout.':type==='AUCTION'?'Payout is derived as total chit amount minus auction discount.':'Fixed Draw payout is the actual historical monthly payout entered for this month.'}</Text></Card>
+    <Input label="Notes (optional)" value={notes} onChangeText={setNotes} multiline/>
+    <Card><Text style={s.section}>Automatic historical accounting</Text><Text style={s.muted}>{`${members} members × ${money(installment)} = ${money(installment*members)} collection`}</Text><Text style={s.muted}>Payment method: CASH</Text><Text style={s.muted}>{`Payment date: ${monthDate}`}</Text><Text style={s.muted}>Payout method: CASH</Text></Card>
+    <Button title={`Finalize & Lock Historical Month ${monthIndex}`} onPress={finalize} disabled={busy}/>
+   </Card>
+  </ScrollView>
+ </Screen>;
 }
