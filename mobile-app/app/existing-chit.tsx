@@ -63,11 +63,11 @@ export default function ExistingChit(){
   if(new Set(memberRows).size!==memberRows.length)return Alert.alert('Duplicate members are not allowed');
   if(agentMonths.length&&!agentId&&!isAgentUser)return Alert.alert('Select the responsible agent before marking AGENT_CHIT months');
   if(agentMonths.length>1)return Alert.alert('Only one AGENT_CHIT month can be configured per chit');
-  const payoutAmounts=Array.from({length:totalMonths},(_,i)=>agentMonths.includes(i+1)?payoutForMonth(i+1):undefined);
+  const payoutAmounts=Array.from({length:totalMonths},(_,i)=>agentMonths.includes(i+1)?payoutForMonth(i+1):0);
   if(agentMonths.some(m=>payoutForMonth(m)<=0))return Alert.alert('Every AGENT_CHIT month needs a positive agent payout');
   setBusy(true);
   try{
-   const r=await runningChitApi.create({name:name.trim(),description:description.trim()||undefined,chitType:type,totalMembers:members,totalMonths,historicalMonthCount:historicalCount,originalStartDate:startDate,dueDay:n(dueDay,5),totalChitAmount:face.toFixed(2),creatorParticipates,agentId:agentId||undefined,members:memberRows.map((v,i)=>v.includes('-')?{userId:v,sequence:i+1}:{mobile:v,sequence:i+1}),agentMonthNumbers:agentMonths,payoutAmounts:payoutAmounts.map(v=>v==null?'':String(v))});
+   const r=await runningChitApi.create({name:name.trim(),description:description.trim()||undefined,chitType:type,totalMembers:members,totalMonths,historicalMonthCount:historicalCount,originalStartDate:startDate,dueDay:n(dueDay,5),totalChitAmount:face.toFixed(2),creatorParticipates,agentId:agentId||undefined,members:memberRows.map((v,i)=>v.includes('-')?{userId:v,sequence:i+1}:{mobile:v,sequence:i+1}),agentMonthNumbers:agentMonths,payoutAmounts:payoutAmounts.map(v=>String(v))});
    const d=r.data?.data??r.data;setCreated(d);setMonthIndex(1);setMonthDate(d?.months?.[0]?.scheduled_date||startDate);setFixedPayout(String(d?.months?.[0]?.winner_payout_amount??face));setDiscount('');setWinner('');setNotes('');setPhase('history');
   }catch(e){Alert.alert('Create failed',errMsg(e))}finally{setBusy(false)}
  };

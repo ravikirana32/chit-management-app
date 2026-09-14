@@ -55,7 +55,7 @@ class CreateRunningChitDto {
  @ApiPropertyOptional({type:[Number]}) @IsOptional() @IsArray() @IsInt({each:true}) @Min(1,{each:true}) agentMonthNumbers?:number[];
  @ApiProperty({type:[RunningMemberDto]}) @IsArray() @ValidateNested({each:true}) @Type(()=>RunningMemberDto) members!:RunningMemberDto[];
  @ApiPropertyOptional({type:[String]}) @IsOptional() @IsArray() @IsDecimal({}, {each:true}) monthlyAmounts?:string[];
- @ApiPropertyOptional({type:[String]}) @IsOptional() @IsArray() @IsDecimal({}, {each:true}) payoutAmounts?:string[];
+ @ApiPropertyOptional({type:[String]}) @IsOptional() @IsArray() @IsString({each:true}) payoutAmounts?:string[];
 }
 
 @ApiTags('Running Chit Onboarding') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
@@ -82,6 +82,7 @@ export class RunningChitOnboardingController {
    if(amounts.length!==dto.totalMonths||amounts.some(x=>!Number.isFinite(x)||x<=0))throw new BadRequestException('monthlyAmounts must contain one positive amount for every month');
    const agentMonths=[...(dto.agentMonthNumbers||[])].map(Number).sort((a,b)=>a-b);
    if(new Set(agentMonths).size!==agentMonths.length||agentMonths.some(x=>x<1||x>dto.totalMonths))throw new BadRequestException('Invalid agent month numbers');
+   if(agentMonths.length>1)throw new BadRequestException('Only one AGENT_CHIT month can be configured per running chit');
    if(agentMonths.length&&!dto.agentId&&!await this.hasCurrentAgent(u.sub,transaction))throw new BadRequestException('A responsible agent is required when AGENT_CHIT months are configured');
    let agentId:string|null=null;
    if(dto.agentId){const [r]:any=await this.db.query(`SELECT id FROM agents WHERE (id=:id OR user_id=:id) AND status='ACTIVE' LIMIT 1`,{replacements:{id:dto.agentId},transaction});if(!r.length)throw new NotFoundException('Active responsible agent not found');agentId=r[0].id;}
