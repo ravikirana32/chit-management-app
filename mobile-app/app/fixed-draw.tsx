@@ -19,13 +19,9 @@ export default function FixedDraw(){
   try{
    const c=await chitsApi.get(String(chitId)); const cd=c.data?.data??c.data; setChit(cd);
    await participantsApi.list(String(chitId));
+   if(isAgent(user)&&!isCreator(user,cd)){try{const a=await agentApi.chit(String(chitId));setAccess(a.data?.data??a.data)}catch{}}
    try{const d=await drawsApi.get(String(chitId),String(monthId));const ds=d.data?.data??d.data;setState(ds);if(ds?.winner?.payout_id)setPayout({id:ds.winner.payout_id,status:ds.winner.payout_status||'PENDING',amount:ds.winner.payout_amount,recipient_name:ds.winner.member_name,recipient_mobile:ds.winner.member_mobile,payment_method:ds.winner.payment_method,transaction_reference:ds.winner.transaction_reference,paid_at:ds.winner.paid_at,notes:'FIXED_DRAW:'})}
    catch{setState({status:'NOT_STARTED',revealStatus:'NONE',participants:[],winner:null})}
-   try{const ps=await payoutsApi.list(String(chitId));const rows=ps.data?.data??ps.data??[];
-    const fixed=rows.find((x:any)=>String(x.chit_month_id??x.chitMonthId)===String(monthId)&&String(x.notes||'').startsWith('FIXED_DRAW:'));
-    setPayout(fixed??null);
-   }catch{setPayout(null)}
-   if(isAgent(user)&&!isCreator(user,cd)){try{const a=await agentApi.chit(String(chitId));setAccess(a.data?.data??a.data)}catch{}}
   }catch(e){setError(errMsg(e))}finally{setLoading(false)}
  },[chitId,monthId,user?.id]);
  useEffect(()=>{load()},[load]);
@@ -37,7 +33,7 @@ export default function FixedDraw(){
  const month=chit.months?.find((m:any)=>String(m.id)===String(monthId));
  const revealStatus=String(state.revealStatus??state.reveal_status??'NONE').toUpperCase();
  const revealActive=revealStatus==='REVEALING'; const completed=revealStatus==='REVEALED'; const winnerSelected=Boolean(state?.winner); const drawCompleted=String(state?.status||'').toUpperCase()==='COMPLETED'; const payoutReady=Boolean(payout); const payoutVisible=Boolean(payoutReady&&(completed||winnerSelected||drawCompleted));
- const interest=async(v:boolean)=>{setBusy(true);try{await drawsApi.interest(String(chitId),String(monthId),v);await load()}catch(e){Alert.alert('Interest failed',errMsg(e))}finally{setBusy(false)}};
+ const interest=async(v:boolean)=>{setBusy(true);try{await drawsApi.interest(String(chitId),String(monthId),v);await load();Alert.alert('Interest saved',v?'Your interest has been recorded.':'Your preference has been recorded.')}catch(e){Alert.alert('Interest failed',errMsg(e))}finally{setBusy(false)}};
  const start=async()=>{setBusy(true);try{await drawsApi.start(String(chitId),{chitMonthId:String(monthId)});await load()}catch(e){Alert.alert('Start failed',errMsg(e))}finally{setBusy(false)}};
  const run=async()=>{setBusy(true);try{await drawsApi.run(String(chitId),String(monthId));await load()}catch(e){Alert.alert('Run failed',errMsg(e))}finally{setBusy(false)}};
  const settle=async()=>{if(!payout?.id)return;if(!reference.trim())return Alert.alert('Reference required','Enter the UPI transaction ID, bank reference, or cash receipt number.');setSettling(true);try{await payoutsApi.settle(String(payout.id),{status:'SETTLED',paymentMethod:method,transactionReference:reference.trim(),notes:'Winner payout settled from Fixed Draw'});Alert.alert('Payout settled','Winner payout has been recorded. The month can now be closed and locked.');await load()}catch(e){Alert.alert('Payout settlement failed',errMsg(e))}finally{setSettling(false)}};
