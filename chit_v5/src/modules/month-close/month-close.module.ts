@@ -10,10 +10,17 @@ import { CurrentUser } from '../auth/current-user.decorator';
 @Controller({path:'month-close',version:'1'})
 class MonthCloseController {
   constructor(private readonly service:MonthCloseService){}
+
   @Post('months/:monthId')
   @ApiOperation({summary:'Lock a fully reconciled chit month'})
   close(@Param('monthId') monthId:string,@CurrentUser() user:any){
     return this.service.close(monthId,user.sub);
+  }
+
+  @Post('months/:monthId/resume-collections')
+  @ApiOperation({summary:'Resume collections for a non-historical month incorrectly completed before contributions were fully verified'})
+  resumeCollections(@Param('monthId') monthId:string,@CurrentUser() user:any){
+    return this.service.resumeCollections(monthId,user.sub);
   }
 }
 @Module({controllers:[MonthCloseController],providers:[MonthCloseService],exports:[MonthCloseService]})

@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Module, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuctionService } from './auction.service';
+import { VerifiedAuctionService } from './verified-auction.service';
 import { AuctionStateService } from './auction-state.service';
 import { AuctionGateway } from './auction.gateway';
 import { AuctionAutoCloseService } from './auction-auto-close.service';
@@ -11,6 +12,7 @@ import { ReopenAuctionDto } from './dto/reopen-auction.dto';
 import { AdditionalAuctionDto } from './dto/additional-auction.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { VerifiedContributionGateService } from '../../common/verified-contribution-gate.service';
 
 @ApiTags('Auctions') @ApiBearerAuth('access-token') @UseGuards(JwtAuthGuard)
 @Controller({path:'auctions',version:'1'})
@@ -26,7 +28,7 @@ class AuctionsController {
  reopen(@Param('auctionId')auctionId:string,@Body()dto:ReopenAuctionDto,@CurrentUser()user:any){return this.service.reopen(auctionId,user.sub,dto.durationMinutes)}
  @Post(':auctionId/bids') @ApiOperation({summary:'Place a bid during the auction window'})
  bid(@Param('auctionId')auctionId:string,@Body()dto:PlaceBidDto,@CurrentUser()user:any){return this.service.placeBid(auctionId,dto.participantId,user.sub,dto.bidAmount)}
- @Post(':auctionId/finalize') @ApiOperation({summary:'Finalize a closed/expired auction'})
+ @Post(':auctionId/finalize') @ApiOperation({summary:'Finalize a closed/expired auction only after every active member contribution is fully verified'})
  finalize(@Param('auctionId')auctionId:string,@Body()_dto:FinalizeAuctionDto,@CurrentUser()user:any){return this.service.finalize(auctionId,user.sub)}
  @Get('chits/:chitId/months/:monthId/current') @ApiOperation({summary:'Get the latest monthly auction for a chit/month'})
  current(@Param('chitId')chitId:string,@Param('monthId')monthId:string,@CurrentUser()user:any){return this.service.current(chitId,monthId,user.sub)}
@@ -35,5 +37,5 @@ class AuctionsController {
  @Get('chits/:chitId/savings') @ApiOperation({summary:'View chit savings balance and transaction history'})
  savings(@Param('chitId')chitId:string,@CurrentUser()user:any){return this.service.getSavings(chitId,user.sub)}
 }
-@Module({controllers:[AuctionsController],providers:[AuctionService,AuctionStateService,AuctionGateway,AuctionAutoCloseService],exports:[AuctionService,AuctionStateService,AuctionGateway]})
+@Module({controllers:[AuctionsController],providers:[VerifiedContributionGateService,AuctionService,VerifiedAuctionService,AuctionStateService,AuctionGateway,AuctionAutoCloseService,{provide:AuctionService,useExisting:VerifiedAuctionService}],exports:[AuctionService,AuctionStateService,AuctionGateway]})
 export class AuctionsModule{}
